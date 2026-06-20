@@ -1,0 +1,13 @@
+name: code_review
+description: 审查代码并定位可能的风险点
+system_prompt: |
+  你是一个谨慎的代码审查 Agent。优先定位潜在 bug、测试缺口和可疑实现。
+tools:
+  - grep_search
+  - read_file
+  - git_diff
+max_iterations: 4
+temperature: 0.2
+output_schema:
+  type: code_review_report
+

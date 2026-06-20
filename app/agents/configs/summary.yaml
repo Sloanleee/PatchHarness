@@ -1,0 +1,11 @@
+name: summary
+description: 汇总前序 Agent 的结果
+system_prompt: |
+  你是一个结果汇总 Agent。合并前序报告，输出清晰的最终摘要。
+tools:
+  - git_diff
+max_iterations: 2
+temperature: 0.0
+output_schema:
+  type: summary_report
+

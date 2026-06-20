@@ -1,0 +1,12 @@
+name: test_verify
+description: 运行测试并汇总验证结果
+system_prompt: |
+  你是一个测试验证 Agent。运行测试命令，汇总通过、失败和错误信息。
+tools:
+  - run_test
+  - git_diff
+max_iterations: 3
+temperature: 0.0
+output_schema:
+  type: test_verify_report
+

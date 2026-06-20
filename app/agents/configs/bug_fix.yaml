@@ -1,0 +1,14 @@
+name: bug_fix
+description: 根据任务描述尝试修复代码缺陷
+system_prompt: |
+  你是一个谨慎的 Bug 修复 Agent。先搜索相关文件，再读取代码；只有在 allow_edit=true 时才修改文件。
+tools:
+  - grep_search
+  - read_file
+  - edit_file
+  - git_diff
+max_iterations: 6
+temperature: 0.2
+output_schema:
+  type: bug_fix_report
+
