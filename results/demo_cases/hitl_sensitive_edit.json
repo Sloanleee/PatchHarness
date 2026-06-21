@@ -1,0 +1,151 @@
+{
+  "request_id": "8da191ca-6efb-4e22-8fe8-b4f6042dff67",
+  "planned_agents": [
+    "bug_fix",
+    "test_verify"
+  ],
+  "agent_reports": [
+    {
+      "agent_name": "bug_fix",
+      "status": "failed",
+      "thoughts": [
+        "按需加载 Skill：bug_fix（117 字符），未把全部 Skill 一次性注入。",
+        "识别到明确替换计划，准备修改 .env"
+      ],
+      "actions": [
+        {
+          "tool": "read_file",
+          "input": {
+            "path": ".env"
+          }
+        },
+        {
+          "tool": "edit_file",
+          "input": {
+            "path": ".env",
+            "old": "TOKEN=old",
+            "new": "TOKEN=new",
+            "allow_edit": true
+          }
+        }
+      ],
+      "observations": [
+        {
+          "tool": "read_file",
+          "ok": true,
+          "data": {
+            "path": ".env",
+            "content": "TOKEN=old\n"
+          },
+          "error": null
+        },
+        {
+          "tool": "edit_file",
+          "ok": false,
+          "data": {
+            "requires_human_approval": true,
+            "hitl_event": {
+              "event": "human_approval_required",
+              "tool": "edit_file",
+              "risk": "high",
+              "reason": "Editing sensitive file requires approval: .env",
+              "path": ".env"
+            }
+          },
+          "error": "Editing sensitive file requires approval: .env"
+        }
+      ],
+      "summary": "未完成编辑：Editing sensitive file requires approval: .env",
+      "changed_files": [],
+      "test_result": null,
+      "context_events": [
+        {
+          "event": "fork",
+          "agent": "bug_fix",
+          "visible_keys": [
+            "task_description",
+            "workspace_path",
+            "planned_agents",
+            "agent_reports"
+          ],
+          "hidden_keys": [
+            "internal_secrets"
+          ]
+        },
+        {
+          "event": "merge",
+          "agent": "bug_fix",
+          "merged_keys": [
+            "agent_reports"
+          ]
+        },
+        {
+          "event": "cleanup",
+          "agent": "bug_fix",
+          "discarded_context_items": 5
+        }
+      ],
+      "skills_available": [
+        {
+          "name": "bug_fix",
+          "description": "Bug 修复时采用最小修改并保留可验证证据",
+          "triggers": [
+            "fix",
+            "bug",
+            "修复"
+          ]
+        },
+        {
+          "name": "code_review",
+          "description": "代码审查时关注缺陷、边界条件和测试缺口",
+          "triggers": [
+            "review",
+            "审查",
+            "检查"
+          ]
+        },
+        {
+          "name": "testing",
+          "description": "修复后运行测试并汇总验证结果",
+          "triggers": [
+            "test",
+            "verify",
+            "测试",
+            "验证"
+          ]
+        }
+      ],
+      "skills_loaded": [
+        "bug_fix"
+      ],
+      "requires_human_approval": true,
+      "hitl_events": [
+        {
+          "event": "human_approval_required",
+          "tool": "edit_file",
+          "risk": "high",
+          "reason": "Editing sensitive file requires approval: .env",
+          "path": ".env"
+        }
+      ],
+      "compression_events": []
+    }
+  ],
+  "changed_files": [],
+  "test_result": null,
+  "metrics": {
+    "agent_calls": 1,
+    "tool_calls": 1,
+    "llm_calls": 0,
+    "context_forks": 1,
+    "context_merges": 1,
+    "context_cleanups": 1,
+    "skills_disclosed": 3,
+    "skills_loaded": 1,
+    "hitl_interruptions": 1,
+    "compression_events": 0,
+    "planned_by": "rule"
+  },
+  "final_summary": "Workflow failed. Planned agents: bug_fix, test_verify. Failed agents: bug_fix. Workflow paused for human approval.",
+  "requires_human_approval": true
+}

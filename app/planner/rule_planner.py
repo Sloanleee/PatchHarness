@@ -44,18 +44,17 @@ class RulePlanner:
                 "rule",
                 "matched full keywords",
             )
+        if self._contains(text, self.REVIEW_KEYWORDS):
+            return PlanningResult(["code_review"], "rule", "matched review keywords")
         if self._contains(text, self.FIX_KEYWORDS):
             return PlanningResult(
                 ["bug_fix", "test_verify"],
                 "rule",
                 "matched fix keywords",
             )
-        if self._contains(text, self.REVIEW_KEYWORDS):
-            return PlanningResult(["code_review"], "rule", "matched review keywords")
 
         return PlanningResult(["code_review"], "rule", "defaulted to review")
 
     @staticmethod
     def _contains(text: str, keywords: tuple[str, ...]) -> bool:
         return any(keyword in text for keyword in keywords)
-

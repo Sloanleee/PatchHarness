@@ -5,39 +5,60 @@ from pathlib import Path
 from typing import Any
 
 from app.agents.registry import AgentConfig
+from app.context import AgentContext
+from app.hitl import HitlPolicy
+from app.metrics import MetricsTracker
 from app.schemas import AgentReport, BugfixRequest, ToolResult
+from app.skills import SkillManager
 from app.tools.base import ToolRegistry
 
 
 class BaseAgent:
-    def __init__(self, config: AgentConfig, tools: ToolRegistry) -> None:
+    def __init__(
+        self,
+        config: AgentConfig,
+        tools: ToolRegistry,
+        skill_manager: SkillManager | None = None,
+        hitl_policy: HitlPolicy | None = None,
+        metrics: MetricsTracker | None = None,
+    ) -> None:
         self.config = config
         self.tools = tools
+        self.skill_manager = skill_manager
+        self.hitl_policy = hitl_policy
+        self.metrics = metrics
 
     def run(
         self,
         request: BugfixRequest,
         prior_reports: list[AgentReport] | None = None,
+        context: AgentContext | None = None,
     ) -> AgentReport:
         prior_reports = prior_reports or []
         workspace = Path(request.workspace_path).resolve()
 
         if self.config.name == "code_review":
-            return self._run_code_review(request, workspace)
-        if self.config.name == "bug_fix":
-            return self._run_bug_fix(request, workspace)
-        if self.config.name == "test_verify":
-            return self._run_test_verify(request, workspace)
-        if self.config.name == "summary":
-            return self._run_summary(prior_reports, workspace)
-        return AgentReport(
-            self.config.name,
-            "skipped",
-            summary=f"No deterministic runner implemented for agent: {self.config.name}",
-        )
+            report = self._run_code_review(request, workspace)
+        elif self.config.name == "bug_fix":
+            report = self._run_bug_fix(request, workspace)
+        elif self.config.name == "test_verify":
+            report = self._run_test_verify(request, workspace)
+        elif self.config.name == "summary":
+            report = self._run_summary(prior_reports, workspace)
+        else:
+            report = AgentReport(
+                self.config.name,
+                "skipped",
+                summary=f"No deterministic runner implemented for agent: {self.config.name}",
+            )
+
+        if context is not None:
+            report.context_events.extend(context.events)
+        return report
 
     def _run_code_review(self, request: BugfixRequest, workspace: Path) -> AgentReport:
         report = AgentReport(self.config.name, "completed")
+        self._prepare_skills(report)
         query = _best_query(request.task_description)
         self._record_thought(report, f"先搜索与任务最相关的关键词：{query}")
         result = self._run_tool(report, workspace, "grep_search", query=query, max_results=10)
@@ -54,6 +75,7 @@ class BaseAgent:
 
     def _run_bug_fix(self, request: BugfixRequest, workspace: Path) -> AgentReport:
         report = AgentReport(self.config.name, "completed")
+        self._prepare_skills(report)
         edit_plan = _parse_edit_plan(request.task_description)
 
         if edit_plan is None:
@@ -96,6 +118,7 @@ class BaseAgent:
 
     def _run_test_verify(self, request: BugfixRequest, workspace: Path) -> AgentReport:
         report = AgentReport(self.config.name, "completed")
+        self._prepare_skills(report)
         if not request.run_tests:
             report.status = "skipped"
             report.summary = "请求关闭了测试执行。"
@@ -114,6 +137,7 @@ class BaseAgent:
 
     def _run_summary(self, prior_reports: list[AgentReport], workspace: Path) -> AgentReport:
         report = AgentReport(self.config.name, "completed")
+        self._prepare_skills(report)
         self._record_thought(report, "汇总前序 Agent 报告，并查看当前 diff")
         self._run_tool(report, workspace, "git_diff")
         completed = sum(1 for item in prior_reports if item.status == "completed")
@@ -124,6 +148,22 @@ class BaseAgent:
     def _run_tool(self, report: AgentReport, workspace: Path, name: str, **kwargs: Any) -> ToolResult:
         if name not in self.config.tools:
             result = ToolResult(name, False, error=f"Tool not allowed for {self.config.name}: {name}")
+        elif self.hitl_policy is not None:
+            decision = self.hitl_policy.evaluate_tool_call(name, kwargs)
+            if decision.requires_approval:
+                event = decision.to_event(name, kwargs)
+                report.requires_human_approval = True
+                report.hitl_events.append(event)
+                if self.metrics is not None:
+                    self.metrics.hitl_interrupted()
+                result = ToolResult(
+                    name,
+                    False,
+                    data={"requires_human_approval": True, "hitl_event": event},
+                    error=decision.reason,
+                )
+            else:
+                result = self.tools.run(name, workspace, **kwargs)
         else:
             result = self.tools.run(name, workspace, **kwargs)
         report.actions.append({"tool": name, "input": _safe_action_input(kwargs)})
@@ -140,6 +180,26 @@ class BaseAgent:
     @staticmethod
     def _record_thought(report: AgentReport, thought: str) -> None:
         report.thoughts.append(thought)
+
+    def _prepare_skills(self, report: AgentReport) -> None:
+        if self.skill_manager is None:
+            return
+        frontmatter = self.skill_manager.public_frontmatter()
+        report.skills_available = frontmatter
+        if self.metrics is not None:
+            self.metrics.skills_disclosed(len(frontmatter))
+
+        skill_name = self.skill_manager.choose_for_agent(self.config.name)
+        if skill_name is None:
+            return
+        content = self.skill_manager.load_skill(skill_name)
+        report.skills_loaded.append(skill_name)
+        self._record_thought(
+            report,
+            f"按需加载 Skill：{skill_name}（{len(content)} 字符），未把全部 Skill 一次性注入。",
+        )
+        if self.metrics is not None:
+            self.metrics.skill_loaded()
 
 
 def _best_query(text: str) -> str:
@@ -171,4 +231,3 @@ def _safe_action_input(payload: dict[str, Any]) -> dict[str, Any]:
     if "content" in safe:
         safe["content"] = "<omitted>"
     return safe
-

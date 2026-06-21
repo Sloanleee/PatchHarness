@@ -1,0 +1,101 @@
+case_id,category,task_description,expected_agents,dynamic_agents,fixed_agent_calls,dynamic_agent_calls,fixed_llm_calls,dynamic_llm_calls,saved_llm_calls,planner_hit,elapsed_ms
+1,review,请审查登录模块的异常处理,code_review,code_review,4,1,8,2,6,True,0.0164
+2,review,review payment service error paths,code_review,code_review,4,1,8,2,6,True,0.0047
+3,review,检查订单状态流转是否有边界问题,code_review,code_review,4,1,8,2,6,True,0.0029
+4,review,请审查缓存失效逻辑,code_review,code_review,4,1,8,2,6,True,0.0017
+5,review,review API validation code,code_review,code_review,4,1,8,2,6,True,0.0019
+6,review,请审查登录模块的异常处理,code_review,code_review,4,1,8,2,6,True,0.0016
+7,review,review payment service error paths,code_review,code_review,4,1,8,2,6,True,0.0015
+8,review,检查订单状态流转是否有边界问题,code_review,code_review,4,1,8,2,6,True,0.0016
+9,review,请审查缓存失效逻辑,code_review,code_review,4,1,8,2,6,True,0.0014
+10,review,review API validation code,code_review,code_review,4,1,8,2,6,True,0.0015
+11,review,请审查登录模块的异常处理,code_review,code_review,4,1,8,2,6,True,0.0014
+12,review,review payment service error paths,code_review,code_review,4,1,8,2,6,True,0.0014
+13,review,检查订单状态流转是否有边界问题,code_review,code_review,4,1,8,2,6,True,0.0015
+14,review,请审查缓存失效逻辑,code_review,code_review,4,1,8,2,6,True,0.0013
+15,review,review API validation code,code_review,code_review,4,1,8,2,6,True,0.0013
+16,review,请审查登录模块的异常处理,code_review,code_review,4,1,8,2,6,True,0.0014
+17,review,review payment service error paths,code_review,code_review,4,1,8,2,6,True,0.0014
+18,review,检查订单状态流转是否有边界问题,code_review,code_review,4,1,8,2,6,True,0.0016
+19,review,请审查缓存失效逻辑,code_review,code_review,4,1,8,2,6,True,0.0012
+20,review,review API validation code,code_review,code_review,4,1,8,2,6,True,0.0013
+21,review,请审查登录模块的异常处理,code_review,code_review,4,1,8,2,6,True,0.0015
+22,review,review payment service error paths,code_review,code_review,4,1,8,2,6,True,0.0014
+23,review,检查订单状态流转是否有边界问题,code_review,code_review,4,1,8,2,6,True,0.0014
+24,review,请审查缓存失效逻辑,code_review,code_review,4,1,8,2,6,True,0.0014
+25,review,review API validation code,code_review,code_review,4,1,8,2,6,True,0.0014
+26,fix,修复用户注册 bug,bug_fix->test_verify,bug_fix->test_verify,4,2,8,4,4,True,0.0037
+27,fix,fix payment bug when amount is zero,bug_fix->test_verify,bug_fix->test_verify,4,2,8,4,4,True,0.0032
+28,fix,修复接口报错：NoneType has no attribute id,bug_fix->test_verify,bug_fix->test_verify,4,2,8,4,4,True,0.0053
+29,fix,bug: retry counter never resets,bug_fix->test_verify,bug_fix->test_verify,4,2,8,4,4,True,0.0033
+30,fix,修复测试失败的解析逻辑,bug_fix->test_verify,bug_fix->test_verify,4,2,8,4,4,True,0.0027
+31,fix,修复用户注册 bug,bug_fix->test_verify,bug_fix->test_verify,4,2,8,4,4,True,0.0018
+32,fix,fix payment bug when amount is zero,bug_fix->test_verify,bug_fix->test_verify,4,2,8,4,4,True,0.0018
+33,fix,修复接口报错：NoneType has no attribute id,bug_fix->test_verify,bug_fix->test_verify,4,2,8,4,4,True,0.0022
+34,fix,bug: retry counter never resets,bug_fix->test_verify,bug_fix->test_verify,4,2,8,4,4,True,0.0018
+35,fix,修复测试失败的解析逻辑,bug_fix->test_verify,bug_fix->test_verify,4,2,8,4,4,True,0.0017
+36,fix,修复用户注册 bug,bug_fix->test_verify,bug_fix->test_verify,4,2,8,4,4,True,0.0018
+37,fix,fix payment bug when amount is zero,bug_fix->test_verify,bug_fix->test_verify,4,2,8,4,4,True,0.0019
+38,fix,修复接口报错：NoneType has no attribute id,bug_fix->test_verify,bug_fix->test_verify,4,2,8,4,4,True,0.0019
+39,fix,bug: retry counter never resets,bug_fix->test_verify,bug_fix->test_verify,4,2,8,4,4,True,0.0018
+40,fix,修复测试失败的解析逻辑,bug_fix->test_verify,bug_fix->test_verify,4,2,8,4,4,True,0.0016
+41,fix,修复用户注册 bug,bug_fix->test_verify,bug_fix->test_verify,4,2,8,4,4,True,0.0018
+42,fix,fix payment bug when amount is zero,bug_fix->test_verify,bug_fix->test_verify,4,2,8,4,4,True,0.0016
+43,fix,修复接口报错：NoneType has no attribute id,bug_fix->test_verify,bug_fix->test_verify,4,2,8,4,4,True,0.0019
+44,fix,bug: retry counter never resets,bug_fix->test_verify,bug_fix->test_verify,4,2,8,4,4,True,0.0016
+45,fix,修复测试失败的解析逻辑,bug_fix->test_verify,bug_fix->test_verify,4,2,8,4,4,True,0.0045
+46,fix,修复用户注册 bug,bug_fix->test_verify,bug_fix->test_verify,4,2,8,4,4,True,0.0018
+47,fix,fix payment bug when amount is zero,bug_fix->test_verify,bug_fix->test_verify,4,2,8,4,4,True,0.0018
+48,fix,修复接口报错：NoneType has no attribute id,bug_fix->test_verify,bug_fix->test_verify,4,2,8,4,4,True,0.0021
+49,fix,bug: retry counter never resets,bug_fix->test_verify,bug_fix->test_verify,4,2,8,4,4,True,0.0019
+50,fix,修复测试失败的解析逻辑,bug_fix->test_verify,bug_fix->test_verify,4,2,8,4,4,True,0.0017
+51,full,全面检查并修复用户模块,code_review->bug_fix->test_verify->summary,code_review->bug_fix->test_verify->summary,4,4,8,8,0,True,0.0012
+52,full,full check for billing workflow,code_review->bug_fix->test_verify->summary,code_review->bug_fix->test_verify->summary,4,4,8,8,0,True,0.0011
+53,full,完整检查缓存模块并验证,code_review->bug_fix->test_verify->summary,code_review->bug_fix->test_verify->summary,4,4,8,8,0,True,0.0009
+54,full,请全面检查项目中的异常路径,code_review->bug_fix->test_verify->summary,code_review->bug_fix->test_verify->summary,4,4,8,8,0,True,0.0011
+55,full,comprehensive review and fix auth service,code_review->bug_fix->test_verify->summary,code_review->bug_fix->test_verify->summary,4,4,8,8,0,True,0.0011
+56,full,全面检查并修复用户模块,code_review->bug_fix->test_verify->summary,code_review->bug_fix->test_verify->summary,4,4,8,8,0,True,0.0010
+57,full,full check for billing workflow,code_review->bug_fix->test_verify->summary,code_review->bug_fix->test_verify->summary,4,4,8,8,0,True,0.0011
+58,full,完整检查缓存模块并验证,code_review->bug_fix->test_verify->summary,code_review->bug_fix->test_verify->summary,4,4,8,8,0,True,0.0010
+59,full,请全面检查项目中的异常路径,code_review->bug_fix->test_verify->summary,code_review->bug_fix->test_verify->summary,4,4,8,8,0,True,0.0009
+60,full,comprehensive review and fix auth service,code_review->bug_fix->test_verify->summary,code_review->bug_fix->test_verify->summary,4,4,8,8,0,True,0.0009
+61,full,全面检查并修复用户模块,code_review->bug_fix->test_verify->summary,code_review->bug_fix->test_verify->summary,4,4,8,8,0,True,0.0009
+62,full,full check for billing workflow,code_review->bug_fix->test_verify->summary,code_review->bug_fix->test_verify->summary,4,4,8,8,0,True,0.0010
+63,full,完整检查缓存模块并验证,code_review->bug_fix->test_verify->summary,code_review->bug_fix->test_verify->summary,4,4,8,8,0,True,0.0009
+64,full,请全面检查项目中的异常路径,code_review->bug_fix->test_verify->summary,code_review->bug_fix->test_verify->summary,4,4,8,8,0,True,0.0009
+65,full,comprehensive review and fix auth service,code_review->bug_fix->test_verify->summary,code_review->bug_fix->test_verify->summary,4,4,8,8,0,True,0.0010
+66,full,全面检查并修复用户模块,code_review->bug_fix->test_verify->summary,code_review->bug_fix->test_verify->summary,4,4,8,8,0,True,0.0010
+67,full,full check for billing workflow,code_review->bug_fix->test_verify->summary,code_review->bug_fix->test_verify->summary,4,4,8,8,0,True,0.0010
+68,full,完整检查缓存模块并验证,code_review->bug_fix->test_verify->summary,code_review->bug_fix->test_verify->summary,4,4,8,8,0,True,0.0009
+69,full,请全面检查项目中的异常路径,code_review->bug_fix->test_verify->summary,code_review->bug_fix->test_verify->summary,4,4,8,8,0,True,0.0010
+70,full,comprehensive review and fix auth service,code_review->bug_fix->test_verify->summary,code_review->bug_fix->test_verify->summary,4,4,8,8,0,True,0.0010
+71,full,全面检查并修复用户模块,code_review->bug_fix->test_verify->summary,code_review->bug_fix->test_verify->summary,4,4,8,8,0,True,0.0009
+72,full,full check for billing workflow,code_review->bug_fix->test_verify->summary,code_review->bug_fix->test_verify->summary,4,4,8,8,0,True,0.0010
+73,full,完整检查缓存模块并验证,code_review->bug_fix->test_verify->summary,code_review->bug_fix->test_verify->summary,4,4,8,8,0,True,0.0009
+74,full,请全面检查项目中的异常路径,code_review->bug_fix->test_verify->summary,code_review->bug_fix->test_verify->summary,4,4,8,8,0,True,0.0011
+75,full,comprehensive review and fix auth service,code_review->bug_fix->test_verify->summary,code_review->bug_fix->test_verify->summary,4,4,8,8,0,True,0.0010
+76,fuzzy,帮我看一下这个模块,code_review,code_review,4,1,8,2,6,True,0.0025
+77,fuzzy,这个功能感觉不太对,code_review,code_review,4,1,8,2,6,True,0.0022
+78,fuzzy,看看最近改动有没有问题,code_review,code_review,4,1,8,2,6,True,0.0023
+79,fuzzy,帮忙处理一下线上反馈,code_review,code_review,4,1,8,2,6,True,0.0022
+80,fuzzy,分析一下用户反馈原因,code_review,code_review,4,1,8,2,6,True,0.0020
+81,fuzzy,帮我看一下这个模块,code_review,code_review,4,1,8,2,6,True,0.0026
+82,fuzzy,这个功能感觉不太对,code_review,code_review,4,1,8,2,6,True,0.0020
+83,fuzzy,看看最近改动有没有问题,code_review,code_review,4,1,8,2,6,True,0.0021
+84,fuzzy,帮忙处理一下线上反馈,code_review,code_review,4,1,8,2,6,True,0.0019
+85,fuzzy,分析一下用户反馈原因,code_review,code_review,4,1,8,2,6,True,0.0020
+86,fuzzy,帮我看一下这个模块,code_review,code_review,4,1,8,2,6,True,0.0023
+87,fuzzy,这个功能感觉不太对,code_review,code_review,4,1,8,2,6,True,0.0020
+88,fuzzy,看看最近改动有没有问题,code_review,code_review,4,1,8,2,6,True,0.0019
+89,fuzzy,帮忙处理一下线上反馈,code_review,code_review,4,1,8,2,6,True,0.0020
+90,fuzzy,分析一下用户反馈原因,code_review,code_review,4,1,8,2,6,True,0.0021
+91,fuzzy,帮我看一下这个模块,code_review,code_review,4,1,8,2,6,True,0.0020
+92,fuzzy,这个功能感觉不太对,code_review,code_review,4,1,8,2,6,True,0.0020
+93,fuzzy,看看最近改动有没有问题,code_review,code_review,4,1,8,2,6,True,0.0020
+94,fuzzy,帮忙处理一下线上反馈,code_review,code_review,4,1,8,2,6,True,0.0020
+95,fuzzy,分析一下用户反馈原因,code_review,code_review,4,1,8,2,6,True,0.0022
+96,fuzzy,帮我看一下这个模块,code_review,code_review,4,1,8,2,6,True,0.0018
+97,fuzzy,这个功能感觉不太对,code_review,code_review,4,1,8,2,6,True,0.0019
+98,fuzzy,看看最近改动有没有问题,code_review,code_review,4,1,8,2,6,True,0.0020
+99,fuzzy,帮忙处理一下线上反馈,code_review,code_review,4,1,8,2,6,True,0.0020
+100,fuzzy,分析一下用户反馈原因,code_review,code_review,4,1,8,2,6,True,0.0020

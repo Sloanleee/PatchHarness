@@ -16,11 +16,38 @@ class MetricsTracker:
     def llm_called(self) -> None:
         self.metrics.llm_calls += 1
 
+    def context_forked(self) -> None:
+        self.metrics.context_forks += 1
+
+    def context_merged(self) -> None:
+        self.metrics.context_merges += 1
+
+    def context_cleaned(self) -> None:
+        self.metrics.context_cleanups += 1
+
+    def skills_disclosed(self, count: int) -> None:
+        self.metrics.skills_disclosed += count
+
+    def skill_loaded(self) -> None:
+        self.metrics.skills_loaded += 1
+
+    def hitl_interrupted(self) -> None:
+        self.metrics.hitl_interruptions += 1
+
+    def compressed(self) -> None:
+        self.metrics.compression_events += 1
+
     def snapshot(self) -> WorkflowMetrics:
         return WorkflowMetrics(
             agent_calls=self.metrics.agent_calls,
             tool_calls=self.metrics.tool_calls,
             llm_calls=self.metrics.llm_calls,
+            context_forks=self.metrics.context_forks,
+            context_merges=self.metrics.context_merges,
+            context_cleanups=self.metrics.context_cleanups,
+            skills_disclosed=self.metrics.skills_disclosed,
+            skills_loaded=self.metrics.skills_loaded,
+            hitl_interruptions=self.metrics.hitl_interruptions,
+            compression_events=self.metrics.compression_events,
             planned_by=self.metrics.planned_by,
         )
-

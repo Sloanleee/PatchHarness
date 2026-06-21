@@ -35,6 +35,12 @@ class AgentReport:
     summary: str = ""
     changed_files: list[str] = field(default_factory=list)
     test_result: dict[str, Any] | None = None
+    context_events: list[dict[str, Any]] = field(default_factory=list)
+    skills_available: list[dict[str, Any]] = field(default_factory=list)
+    skills_loaded: list[str] = field(default_factory=list)
+    requires_human_approval: bool = False
+    hitl_events: list[dict[str, Any]] = field(default_factory=list)
+    compression_events: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass(slots=True)
@@ -42,6 +48,13 @@ class WorkflowMetrics:
     agent_calls: int = 0
     tool_calls: int = 0
     llm_calls: int = 0
+    context_forks: int = 0
+    context_merges: int = 0
+    context_cleanups: int = 0
+    skills_disclosed: int = 0
+    skills_loaded: int = 0
+    hitl_interruptions: int = 0
+    compression_events: int = 0
     planned_by: str = "rule"
 
 
@@ -54,6 +67,7 @@ class BugfixResponse:
     test_result: dict[str, Any] | None
     metrics: WorkflowMetrics
     final_summary: str
+    requires_human_approval: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -69,6 +83,12 @@ class BugfixResponse:
                     "summary": report.summary,
                     "changed_files": report.changed_files,
                     "test_result": report.test_result,
+                    "context_events": report.context_events,
+                    "skills_available": report.skills_available,
+                    "skills_loaded": report.skills_loaded,
+                    "requires_human_approval": report.requires_human_approval,
+                    "hitl_events": report.hitl_events,
+                    "compression_events": report.compression_events,
                 }
                 for report in self.agent_reports
             ],
@@ -78,8 +98,15 @@ class BugfixResponse:
                 "agent_calls": self.metrics.agent_calls,
                 "tool_calls": self.metrics.tool_calls,
                 "llm_calls": self.metrics.llm_calls,
+                "context_forks": self.metrics.context_forks,
+                "context_merges": self.metrics.context_merges,
+                "context_cleanups": self.metrics.context_cleanups,
+                "skills_disclosed": self.metrics.skills_disclosed,
+                "skills_loaded": self.metrics.skills_loaded,
+                "hitl_interruptions": self.metrics.hitl_interruptions,
+                "compression_events": self.metrics.compression_events,
                 "planned_by": self.metrics.planned_by,
             },
             "final_summary": self.final_summary,
+            "requires_human_approval": self.requires_human_approval,
         }
-

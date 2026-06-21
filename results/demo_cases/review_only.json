@@ -1,0 +1,118 @@
+{
+  "request_id": "067524c3-a37b-45ba-b91b-2680d20b6116",
+  "planned_agents": [
+    "code_review"
+  ],
+  "agent_reports": [
+    {
+      "agent_name": "code_review",
+      "status": "completed",
+      "thoughts": [
+        "按需加载 Skill：code_review（112 字符），未把全部 Skill 一次性注入。",
+        "先搜索与任务最相关的关键词：calculator.py"
+      ],
+      "actions": [
+        {
+          "tool": "grep_search",
+          "input": {
+            "query": "calculator.py",
+            "max_results": 10
+          }
+        }
+      ],
+      "observations": [
+        {
+          "tool": "grep_search",
+          "ok": true,
+          "data": {
+            "matches": []
+          },
+          "error": null
+        }
+      ],
+      "summary": "未找到明显相关代码，建议补充更具体的报错、函数名或文件路径。",
+      "changed_files": [],
+      "test_result": null,
+      "context_events": [
+        {
+          "event": "fork",
+          "agent": "code_review",
+          "visible_keys": [
+            "task_description",
+            "workspace_path",
+            "planned_agents",
+            "agent_reports"
+          ],
+          "hidden_keys": [
+            "internal_secrets"
+          ]
+        },
+        {
+          "event": "merge",
+          "agent": "code_review",
+          "merged_keys": [
+            "agent_reports"
+          ]
+        },
+        {
+          "event": "cleanup",
+          "agent": "code_review",
+          "discarded_context_items": 5
+        }
+      ],
+      "skills_available": [
+        {
+          "name": "bug_fix",
+          "description": "Bug 修复时采用最小修改并保留可验证证据",
+          "triggers": [
+            "fix",
+            "bug",
+            "修复"
+          ]
+        },
+        {
+          "name": "code_review",
+          "description": "代码审查时关注缺陷、边界条件和测试缺口",
+          "triggers": [
+            "review",
+            "审查",
+            "检查"
+          ]
+        },
+        {
+          "name": "testing",
+          "description": "修复后运行测试并汇总验证结果",
+          "triggers": [
+            "test",
+            "verify",
+            "测试",
+            "验证"
+          ]
+        }
+      ],
+      "skills_loaded": [
+        "code_review"
+      ],
+      "requires_human_approval": false,
+      "hitl_events": [],
+      "compression_events": []
+    }
+  ],
+  "changed_files": [],
+  "test_result": null,
+  "metrics": {
+    "agent_calls": 1,
+    "tool_calls": 1,
+    "llm_calls": 0,
+    "context_forks": 1,
+    "context_merges": 1,
+    "context_cleanups": 1,
+    "skills_disclosed": 3,
+    "skills_loaded": 1,
+    "hitl_interruptions": 0,
+    "compression_events": 0,
+    "planned_by": "rule"
+  },
+  "final_summary": "Workflow completed. Planned agents: code_review.",
+  "requires_human_approval": false
+}
