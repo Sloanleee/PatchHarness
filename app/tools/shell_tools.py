@@ -10,6 +10,14 @@ from app.tools.base import BaseTool
 
 class RunTestTool(BaseTool):
     name = "run_test"
+    description = "Run a test command in the workspace."
+    input_schema = {
+        "type": "object",
+        "properties": {
+            "command": {"type": "string"},
+            "timeout": {"type": "integer", "default": 60},
+        },
+    }
 
     def run(self, workspace: Path, **kwargs: Any) -> ToolResult:
         command = str(kwargs.get("command") or "python -m unittest discover -s tests")
@@ -21,6 +29,8 @@ class RunTestTool(BaseTool):
                 cwd=workspace,
                 shell=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 capture_output=True,
                 timeout=timeout,
                 check=False,
@@ -46,4 +56,3 @@ class RunTestTool(BaseTool):
             },
             None if completed.returncode == 0 else "test command failed",
         )
-

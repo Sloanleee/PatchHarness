@@ -65,9 +65,10 @@ class StageTwoTests(unittest.TestCase):
                 {
                     "tool": "read_file",
                     "ok": True,
-                    "data": {"content": "x" * 5000},
+                    "data": {"content": f"{index}-" + ("x" * 1000)},
                     "error": None,
                 }
+                for index in range(5)
             ],
         )
 
@@ -76,8 +77,8 @@ class StageTwoTests(unittest.TestCase):
         self.assertTrue(compressed)
         self.assertEqual(report.compression_events[0]["event"], "compress")
         self.assertIn("[compressed]", report.observations[0]["data"]["content"])
+        self.assertNotIn("[compressed]", report.observations[-1]["data"]["content"])
 
 
 if __name__ == "__main__":
     unittest.main()
-

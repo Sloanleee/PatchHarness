@@ -3,4 +3,11 @@
 __pycache__/
 .pytest_cache/
 README1.md
+READMEv2.md
 plan.md
+problem-solution.md
+results/real_llm_benchmark/runs/*
+!results/real_llm_benchmark/runs/20260621_214846/
+results/real_llm_benchmark/runs/20260621_214846/*
+!results/real_llm_benchmark/runs/20260621_214846/summary.md
+!results/real_llm_benchmark/runs/20260621_214846/comparison.csv

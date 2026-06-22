@@ -6,8 +6,9 @@ tools:
   - grep_search
   - read_file
   - git_diff
+  - search_skill
+  - download_skill
 max_iterations: 4
 temperature: 0.2
 output_schema:
   type: code_review_report
-

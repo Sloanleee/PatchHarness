@@ -1,5 +1,5 @@
 {
-  "request_id": "067524c3-a37b-45ba-b91b-2680d20b6116",
+  "request_id": "4ead7fbb-c2f7-494e-a0be-38bef6800d04",
   "planned_agents": [
     "code_review"
   ],
@@ -103,7 +103,12 @@
   "metrics": {
     "agent_calls": 1,
     "tool_calls": 1,
+    "mcp_tool_calls": 1,
     "llm_calls": 0,
+    "prompt_tokens": 0,
+    "completion_tokens": 0,
+    "llm_fallbacks": 0,
+    "planner_hitl_interruptions": 0,
     "context_forks": 1,
     "context_merges": 1,
     "context_cleanups": 1,
@@ -114,5 +119,13 @@
     "planned_by": "rule"
   },
   "final_summary": "Workflow completed. Planned agents: code_review.",
-  "requires_human_approval": false
+  "requires_human_approval": false,
+  "planning": {
+    "planned_by": "rule",
+    "reason": "mode=review",
+    "confidence": 1.0,
+    "needs_fallback": false,
+    "requires_human_approval": false
+  },
+  "approval_events": []
 }

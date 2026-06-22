@@ -7,6 +7,7 @@ from typing import Any
 from app.agents.registry import AgentConfig
 from app.context import AgentContext
 from app.hitl import HitlPolicy
+from app.llm import LLMClient
 from app.metrics import MetricsTracker
 from app.schemas import AgentReport, BugfixRequest, ToolResult
 from app.skills import SkillManager
@@ -21,12 +22,14 @@ class BaseAgent:
         skill_manager: SkillManager | None = None,
         hitl_policy: HitlPolicy | None = None,
         metrics: MetricsTracker | None = None,
+        llm_client: LLMClient | None = None,
     ) -> None:
         self.config = config
         self.tools = tools
         self.skill_manager = skill_manager
         self.hitl_policy = hitl_policy
         self.metrics = metrics
+        self.llm_client = llm_client
 
     def run(
         self,
@@ -79,6 +82,8 @@ class BaseAgent:
         edit_plan = _parse_edit_plan(request.task_description)
 
         if edit_plan is None:
+            if self.llm_client is not None:
+                return self._run_llm_react(request, workspace, report)
             query = _best_query(request.task_description)
             self._record_thought(report, f"未识别到明确替换指令，先搜索关键词：{query}")
             result = self._run_tool(report, workspace, "grep_search", query=query, max_results=10)
@@ -116,6 +121,86 @@ class BaseAgent:
             report.summary = f"未完成编辑：{edit_result.error}"
         return report
 
+    def _run_llm_react(
+        self,
+        request: BugfixRequest,
+        workspace: Path,
+        report: AgentReport,
+    ) -> AgentReport:
+        self._record_thought(report, "未识别到明确替换指令，进入 LLM ReAct 决策。")
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    f"You are {self.config.name}. Return one JSON object only. "
+                    "Required schema: "
+                    "{\"thought\": string, \"action\": string|null, "
+                    "\"action_input\": object, \"final\": string|null}. "
+                    "Never return boolean final. Never return string/list action_input. "
+                    "When calling read_file use {\"path\": \"...\"}. "
+                    "When calling edit_file use {\"path\": \"...\", \"old\": \"...\", \"new\": \"...\"}. "
+                    f"Allowed actions: {', '.join(self.config.tools)}. "
+                    "Use final only after the necessary tool actions are complete."
+                ),
+            },
+            {"role": "user", "content": request.task_description},
+        ]
+        for _ in range(self.config.max_iterations):
+            try:
+                response = self.llm_client.complete_json(messages, temperature=self.config.temperature)
+            except Exception as exc:
+                if _is_timeout_error(exc):
+                    if self.metrics is not None:
+                        self.metrics.llm_timed_out()
+                    report.status = "failed"
+                    report.summary = f"LLM request timed out: {exc}"
+                    return report
+                raise
+            if self.metrics is not None:
+                self.metrics.llm_called(response.prompt_tokens, response.completion_tokens)
+            try:
+                action = response.to_action()
+            except ValueError as exc:
+                report.status = "failed"
+                report.summary = f"LLM action parse failed: {exc}"
+                return report
+            if action.thought:
+                self._record_thought(report, action.thought)
+            if action.final:
+                if self.config.name == "bug_fix" and not report.changed_files:
+                    report.status = "failed"
+                    report.summary = (
+                        "LLM returned final before producing a code change; "
+                        "bug_fix requires edit_file success or explicit changed_files."
+                    )
+                    return report
+                report.summary = action.final
+                return report
+            if not action.action:
+                report.summary = "LLM stopped without an action."
+                return report
+            action_input = dict(action.action_input)
+            if action.action == "edit_file":
+                action_input.setdefault("allow_edit", request.allow_edit)
+            result = self._run_tool(report, workspace, action.action, **action_input)
+            if result.ok and action.action == "edit_file" and "path" in result.data:
+                report.changed_files.append(str(result.data["path"]))
+                self._run_tool(report, workspace, "git_diff", path=str(result.data["path"]))
+            messages.append({"role": "assistant", "content": response.content})
+            messages.append(
+                {
+                    "role": "user",
+                    "content": f"Observation: ok={result.ok}, data={result.data}, error={result.error}",
+                }
+            )
+            if report.requires_human_approval:
+                report.status = "failed"
+                report.summary = "LLM ReAct paused for human approval."
+                return report
+        report.status = "failed"
+        report.summary = "LLM ReAct reached max_iterations without final answer."
+        return report
+
     def _run_test_verify(self, request: BugfixRequest, workspace: Path) -> AgentReport:
         report = AgentReport(self.config.name, "completed")
         self._prepare_skills(report)
@@ -146,7 +231,8 @@ class BaseAgent:
         return report
 
     def _run_tool(self, report: AgentReport, workspace: Path, name: str, **kwargs: Any) -> ToolResult:
-        if name not in self.config.tools:
+        dynamic_skill_tools = {"search_skill", "download_skill", "create_skill", "update_skill"}
+        if name not in self.config.tools and name not in dynamic_skill_tools:
             result = ToolResult(name, False, error=f"Tool not allowed for {self.config.name}: {name}")
         elif self.hitl_policy is not None:
             decision = self.hitl_policy.evaluate_tool_call(name, kwargs)
@@ -231,3 +317,9 @@ def _safe_action_input(payload: dict[str, Any]) -> dict[str, Any]:
     if "content" in safe:
         safe["content"] = "<omitted>"
     return safe
+
+
+def _is_timeout_error(exc: Exception) -> bool:
+    name = exc.__class__.__name__.lower()
+    message = str(exc).lower()
+    return "timeout" in name or "timed out" in message

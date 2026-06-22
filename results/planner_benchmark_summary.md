@@ -19,7 +19,7 @@
 - Saved LLM calls: 400
 - Saved LLM call rate: 50.0%
 - Planner hit rate: 100.0%
-- Average planning latency: 0.0019 ms
+- Average planning latency: 0.0021 ms
 
 ## Interpretation
 

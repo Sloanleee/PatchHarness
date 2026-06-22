@@ -34,6 +34,9 @@ class BugfixRequestModel(BaseModel):  # type: ignore[misc, valid-type]
         allow_edit: bool = False
         run_tests: bool = True
         test_command: str | None = None
+        enable_llm: bool = False
+        use_langgraph: bool = False
+        planning_confidence_threshold: float = 0.65
 
 
 if FastAPI is not None:

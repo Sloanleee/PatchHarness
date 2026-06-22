@@ -7,8 +7,11 @@ tools:
   - read_file
   - edit_file
   - git_diff
+  - search_skill
+  - download_skill
+  - create_skill
+  - update_skill
 max_iterations: 6
 temperature: 0.2
 output_schema:
   type: bug_fix_report
-

@@ -10,6 +10,15 @@ from app.tools.base import BaseTool, ToolRegistry, resolve_workspace_path
 
 class GrepSearchTool(BaseTool):
     name = "grep_search"
+    description = "Search text files in the workspace for a query."
+    input_schema = {
+        "type": "object",
+        "properties": {
+            "query": {"type": "string"},
+            "max_results": {"type": "integer", "default": 20},
+        },
+        "required": ["query"],
+    }
 
     def run(self, workspace: Path, **kwargs: Any) -> ToolResult:
         query = str(kwargs.get("query", "")).strip()
@@ -43,6 +52,12 @@ class GrepSearchTool(BaseTool):
 
 class ReadFileTool(BaseTool):
     name = "read_file"
+    description = "Read a UTF-8 text file from the workspace."
+    input_schema = {
+        "type": "object",
+        "properties": {"path": {"type": "string"}},
+        "required": ["path"],
+    }
 
     def run(self, workspace: Path, **kwargs: Any) -> ToolResult:
         relative_path = str(kwargs.get("path", "")).strip()
@@ -60,6 +75,17 @@ class ReadFileTool(BaseTool):
 
 class EditFileTool(BaseTool):
     name = "edit_file"
+    description = "Replace one exact text occurrence in a workspace file."
+    input_schema = {
+        "type": "object",
+        "properties": {
+            "path": {"type": "string"},
+            "old": {"type": "string"},
+            "new": {"type": "string"},
+            "allow_edit": {"type": "boolean"},
+        },
+        "required": ["path", "old", "new", "allow_edit"],
+    }
 
     def run(self, workspace: Path, **kwargs: Any) -> ToolResult:
         relative_path = str(kwargs.get("path", "")).strip()
@@ -99,6 +125,11 @@ class EditFileTool(BaseTool):
 
 class GitDiffTool(BaseTool):
     name = "git_diff"
+    description = "Return git diff for the workspace or a path when inside a git repository."
+    input_schema = {
+        "type": "object",
+        "properties": {"path": {"type": "string"}},
+    }
 
     def run(self, workspace: Path, **kwargs: Any) -> ToolResult:
         relative_path = str(kwargs.get("path", "")).strip()
@@ -107,6 +138,8 @@ class GitDiffTool(BaseTool):
                 ["git", "rev-parse", "--is-inside-work-tree"],
                 cwd=workspace,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 capture_output=True,
                 timeout=5,
                 check=False,
@@ -133,6 +166,8 @@ class GitDiffTool(BaseTool):
                 command,
                 cwd=workspace,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 capture_output=True,
                 timeout=15,
                 check=False,
@@ -152,11 +187,22 @@ class GitDiffTool(BaseTool):
         )
 
 
-def create_default_tools(metrics: Any | None = None) -> ToolRegistry:
+def create_default_tools(metrics: Any | None = None, skill_manager: Any | None = None) -> ToolRegistry:
     from app.tools.shell_tools import RunTestTool
+    from app.skills.tools import CreateSkillTool, DownloadSkillTool, SearchSkillTool, UpdateSkillTool
 
     return ToolRegistry(
-        [GrepSearchTool(), ReadFileTool(), EditFileTool(), RunTestTool(), GitDiffTool()],
+        [
+            GrepSearchTool(),
+            ReadFileTool(),
+            EditFileTool(),
+            RunTestTool(),
+            GitDiffTool(),
+            SearchSkillTool(skill_manager),
+            DownloadSkillTool(skill_manager),
+            CreateSkillTool(skill_manager),
+            UpdateSkillTool(skill_manager),
+        ],
         metrics=metrics,
     )
 

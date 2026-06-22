@@ -10,10 +10,19 @@ from app.schemas import ToolResult
 
 class BaseTool(ABC):
     name: str
+    description: str = ""
+    input_schema: dict[str, Any] = {}
 
     @abstractmethod
     def run(self, workspace: Path, **kwargs: Any) -> ToolResult:
         raise NotImplementedError
+
+    def schema(self) -> dict[str, Any]:
+        return {
+            "name": self.name,
+            "description": self.description or self.name,
+            "input_schema": self.input_schema or {"type": "object", "properties": {}},
+        }
 
 
 class ToolRegistry:
@@ -23,6 +32,9 @@ class ToolRegistry:
 
     def names(self) -> list[str]:
         return sorted(self._tools)
+
+    def schemas(self) -> list[dict[str, Any]]:
+        return [self._tools[name].schema() for name in self.names()]
 
     def run(self, name: str, workspace: Path, **kwargs: Any) -> ToolResult:
         tool = self._tools.get(name)
@@ -39,4 +51,3 @@ def resolve_workspace_path(workspace: Path, relative_path: str) -> Path:
     if target != root and root not in target.parents:
         raise ValueError(f"Path escapes workspace: {relative_path}")
     return target
-

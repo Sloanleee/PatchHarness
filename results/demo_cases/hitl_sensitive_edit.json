@@ -1,5 +1,5 @@
 {
-  "request_id": "8da191ca-6efb-4e22-8fe8-b4f6042dff67",
+  "request_id": "3955b98f-eaf6-41ba-af7a-15485fd32833",
   "planned_agents": [
     "bug_fix",
     "test_verify"
@@ -136,7 +136,12 @@
   "metrics": {
     "agent_calls": 1,
     "tool_calls": 1,
+    "mcp_tool_calls": 1,
     "llm_calls": 0,
+    "prompt_tokens": 0,
+    "completion_tokens": 0,
+    "llm_fallbacks": 0,
+    "planner_hitl_interruptions": 0,
     "context_forks": 1,
     "context_merges": 1,
     "context_cleanups": 1,
@@ -147,5 +152,21 @@
     "planned_by": "rule"
   },
   "final_summary": "Workflow failed. Planned agents: bug_fix, test_verify. Failed agents: bug_fix. Workflow paused for human approval.",
-  "requires_human_approval": true
+  "requires_human_approval": true,
+  "planning": {
+    "planned_by": "rule",
+    "reason": "mode=fix",
+    "confidence": 1.0,
+    "needs_fallback": false,
+    "requires_human_approval": false
+  },
+  "approval_events": [
+    {
+      "event": "human_approval_required",
+      "tool": "edit_file",
+      "risk": "high",
+      "reason": "Editing sensitive file requires approval: .env",
+      "path": ".env"
+    }
+  ]
 }

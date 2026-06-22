@@ -15,6 +15,9 @@ class BugfixRequest:
     allow_edit: bool = False
     run_tests: bool = True
     test_command: str | None = None
+    enable_llm: bool = False
+    use_langgraph: bool = False
+    planning_confidence_threshold: float = 0.65
 
 
 @dataclass(slots=True)
@@ -47,7 +50,13 @@ class AgentReport:
 class WorkflowMetrics:
     agent_calls: int = 0
     tool_calls: int = 0
+    mcp_tool_calls: int = 0
     llm_calls: int = 0
+    llm_timeouts: int = 0
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    llm_fallbacks: int = 0
+    planner_hitl_interruptions: int = 0
     context_forks: int = 0
     context_merges: int = 0
     context_cleanups: int = 0
@@ -68,6 +77,8 @@ class BugfixResponse:
     metrics: WorkflowMetrics
     final_summary: str
     requires_human_approval: bool = False
+    planning: dict[str, Any] = field(default_factory=dict)
+    approval_events: list[dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -97,7 +108,13 @@ class BugfixResponse:
             "metrics": {
                 "agent_calls": self.metrics.agent_calls,
                 "tool_calls": self.metrics.tool_calls,
+                "mcp_tool_calls": self.metrics.mcp_tool_calls,
                 "llm_calls": self.metrics.llm_calls,
+                "llm_timeouts": self.metrics.llm_timeouts,
+                "prompt_tokens": self.metrics.prompt_tokens,
+                "completion_tokens": self.metrics.completion_tokens,
+                "llm_fallbacks": self.metrics.llm_fallbacks,
+                "planner_hitl_interruptions": self.metrics.planner_hitl_interruptions,
                 "context_forks": self.metrics.context_forks,
                 "context_merges": self.metrics.context_merges,
                 "context_cleanups": self.metrics.context_cleanups,
@@ -109,4 +126,6 @@ class BugfixResponse:
             },
             "final_summary": self.final_summary,
             "requires_human_approval": self.requires_human_approval,
+            "planning": self.planning,
+            "approval_events": self.approval_events,
         }

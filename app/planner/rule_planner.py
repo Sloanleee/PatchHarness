@@ -10,6 +10,10 @@ class PlanningResult:
     agents: list[str]
     planned_by: str
     reason: str
+    confidence: float = 1.0
+    needs_fallback: bool = False
+    requires_human_approval: bool = False
+    approval_event: dict | None = None
 
 
 class RulePlanner:
@@ -28,14 +32,15 @@ class RulePlanner:
         text = request.task_description.lower()
 
         if mode == "review":
-            return PlanningResult(["code_review"], "rule", "mode=review")
+            return PlanningResult(["code_review"], "rule", "mode=review", confidence=1.0)
         if mode == "fix":
-            return PlanningResult(["bug_fix", "test_verify"], "rule", "mode=fix")
+            return PlanningResult(["bug_fix", "test_verify"], "rule", "mode=fix", confidence=1.0)
         if mode == "full":
             return PlanningResult(
                 ["code_review", "bug_fix", "test_verify", "summary"],
                 "rule",
                 "mode=full",
+                confidence=1.0,
             )
 
         if self._contains(text, self.FULL_KEYWORDS):
@@ -43,17 +48,27 @@ class RulePlanner:
                 ["code_review", "bug_fix", "test_verify", "summary"],
                 "rule",
                 "matched full keywords",
+                confidence=0.95,
             )
         if self._contains(text, self.REVIEW_KEYWORDS):
-            return PlanningResult(["code_review"], "rule", "matched review keywords")
+            return PlanningResult(
+                ["code_review"], "rule", "matched review keywords", confidence=0.9
+            )
         if self._contains(text, self.FIX_KEYWORDS):
             return PlanningResult(
                 ["bug_fix", "test_verify"],
                 "rule",
                 "matched fix keywords",
+                confidence=0.9,
             )
 
-        return PlanningResult(["code_review"], "rule", "defaulted to review")
+        return PlanningResult(
+            ["code_review"],
+            "rule",
+            "defaulted to review; fallback recommended",
+            confidence=0.35,
+            needs_fallback=True,
+        )
 
     @staticmethod
     def _contains(text: str, keywords: tuple[str, ...]) -> bool:

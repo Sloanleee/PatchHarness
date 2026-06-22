@@ -5,8 +5,9 @@ system_prompt: |
 tools:
   - run_test
   - git_diff
+  - search_skill
+  - download_skill
 max_iterations: 3
 temperature: 0.0
 output_schema:
   type: test_verify_report
-
