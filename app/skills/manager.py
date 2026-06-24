@@ -104,6 +104,8 @@ class SkillManager:
     def choose_for_agent(self, agent_name: str) -> str | None:
         mapping = {
             "code_review": "code_review",
+            "root_cause_analysis": "code_review",
+            "patch_generation": "bug_fix",
             "bug_fix": "bug_fix",
             "test_verify": "testing",
         }

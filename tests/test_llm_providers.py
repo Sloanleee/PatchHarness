@@ -1,5 +1,7 @@
 import os
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from app.llm import MockLLMClient, VolcengineArkClient, create_llm_client
@@ -16,6 +18,17 @@ class LLMProviderTests(unittest.TestCase):
         with patch.dict(os.environ, {"PATCHHARNESS_LLM_PROVIDER": "unknown"}, clear=False):
             with self.assertRaises(ValueError):
                 create_llm_client()
+
+    def test_factory_loads_provider_from_dotenv_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            env_path = Path(tmp) / ".env"
+            env_path.write_text("PATCHHARNESS_LLM_PROVIDER=mock\n", encoding="utf-8")
+            with patch.dict(os.environ, {}, clear=True), patch(
+                "app.llm.factory.Path.cwd", return_value=Path(tmp)
+            ):
+                client = create_llm_client()
+
+        self.assertIsInstance(client, MockLLMClient)
 
     def test_volcengine_client_uses_httpx_responses_api_shape(self):
         calls = {}

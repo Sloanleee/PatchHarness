@@ -52,8 +52,12 @@ class StageTwoTests(unittest.TestCase):
             )
 
             self.assertTrue(response.requires_human_approval)
-            self.assertEqual(response.planned_agents, ["bug_fix", "test_verify"])
-            self.assertEqual(len(response.agent_reports), 1)
+            self.assertEqual(
+                response.planned_agents,
+                ["root_cause_analysis", "patch_generation", "test_verify"],
+            )
+            self.assertEqual(len(response.agent_reports), 2)
+            self.assertEqual(response.agent_reports[1].agent_name, "patch_generation")
             self.assertEqual((workspace / ".env").read_text(encoding="utf-8"), "TOKEN=old\n")
             self.assertGreater(response.metrics.hitl_interruptions, 0)
 

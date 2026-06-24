@@ -10,9 +10,10 @@ class AgentRegistryTests(unittest.TestCase):
         registry = AgentRegistry.load_from_dir(config_dir)
         self.assertIn("code_review", registry.names())
         self.assertIn("bug_fix", registry.names())
+        self.assertIn("root_cause_analysis", registry.names())
+        self.assertIn("patch_generation", registry.names())
         self.assertIn("test_verify", registry.names())
 
 
 if __name__ == "__main__":
     unittest.main()
-

@@ -33,7 +33,16 @@ class WorkflowTests(unittest.TestCase):
                 )
             )
 
-            self.assertEqual(response.planned_agents, ["bug_fix", "test_verify"])
+            self.assertEqual(
+                response.planned_agents,
+                ["root_cause_analysis", "patch_generation", "test_verify"],
+            )
+            self.assertEqual(
+                [report.agent_name for report in response.agent_reports],
+                ["root_cause_analysis", "patch_generation", "test_verify"],
+            )
+            self.assertEqual(response.agent_reports[0].changed_files, [])
+            self.assertEqual(response.agent_reports[1].changed_files, ["calc.py"])
             self.assertEqual(response.changed_files, ["calc.py"])
             self.assertEqual(response.test_result["returncode"], 0)
             self.assertIn("return a + b", (workspace / "calc.py").read_text(encoding="utf-8"))
@@ -41,4 +50,3 @@ class WorkflowTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

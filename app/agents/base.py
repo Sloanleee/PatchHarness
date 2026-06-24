@@ -42,6 +42,10 @@ class BaseAgent:
 
         if self.config.name == "code_review":
             report = self._run_code_review(request, workspace)
+        elif self.config.name == "root_cause_analysis":
+            report = self._run_root_cause_analysis(request, workspace)
+        elif self.config.name == "patch_generation":
+            report = self._run_patch_generation(request, workspace)
         elif self.config.name == "bug_fix":
             report = self._run_bug_fix(request, workspace)
         elif self.config.name == "test_verify":
@@ -58,6 +62,42 @@ class BaseAgent:
         if context is not None:
             report.context_events.extend(context.events)
         return report
+
+    def _run_root_cause_analysis(self, request: BugfixRequest, workspace: Path) -> AgentReport:
+        report = AgentReport(self.config.name, "completed")
+        self._prepare_skills(report)
+        edit_plan = _parse_edit_plan(request.task_description)
+        if edit_plan is not None:
+            self._record_thought(
+                report,
+                f"Detected explicit edit target {edit_plan['path']}; reading it for root cause context.",
+            )
+            result = self._run_tool(report, workspace, "read_file", path=edit_plan["path"])
+            if not result.ok:
+                report.status = "failed"
+                report.summary = f"Root cause analysis could not read target file: {result.error}"
+                return report
+            report.summary = (
+                f"Likely root cause is in {edit_plan['path']}: "
+                f"the code contains `{edit_plan['old']}` and should use `{edit_plan['new']}`."
+            )
+            return report
+
+        query = _best_query(request.task_description)
+        self._record_thought(report, f"Searching for likely root cause with query: {query}")
+        result = self._run_tool(report, workspace, "grep_search", query=query, max_results=10)
+        matches = result.data.get("matches", []) if result.ok else []
+        if matches:
+            first_path = str(matches[0]["path"])
+            self._record_thought(report, f"Reading first likely source file: {first_path}")
+            self._run_tool(report, workspace, "read_file", path=first_path)
+            report.summary = f"Found {len(matches)} possible root-cause location(s); first candidate: {first_path}."
+        else:
+            report.summary = "No clear root-cause location found from deterministic search."
+        return report
+
+    def _run_patch_generation(self, request: BugfixRequest, workspace: Path) -> AgentReport:
+        return self._run_bug_fix(request, workspace)
 
     def _run_code_review(self, request: BugfixRequest, workspace: Path) -> AgentReport:
         report = AgentReport(self.config.name, "completed")
@@ -167,11 +207,11 @@ class BaseAgent:
             if action.thought:
                 self._record_thought(report, action.thought)
             if action.final:
-                if self.config.name == "bug_fix" and not report.changed_files:
+                if self.config.name in {"bug_fix", "patch_generation"} and not report.changed_files:
                     report.status = "failed"
                     report.summary = (
                         "LLM returned final before producing a code change; "
-                        "bug_fix requires edit_file success or explicit changed_files."
+                        f"{self.config.name} requires edit_file success or explicit changed_files."
                     )
                     return report
                 report.summary = action.final

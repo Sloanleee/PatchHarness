@@ -17,15 +17,20 @@ class PlanningResult:
 
 
 class RulePlanner:
-    """Zero-LLM planner for the MVP.
+    """Zero-LLM planner for deterministic agent routing."""
 
-    The planner intentionally starts simple: mode overrides are deterministic,
-    then keyword routing covers common Chinese and English task descriptions.
-    """
+    REVIEW_KEYWORDS = ("review", "inspect", "audit", "check", "审查", "检查")
+    FIX_KEYWORDS = ("fix", "bug", "error", "failure", "repair", "修复", "报错", "失败", "异常")
+    FULL_KEYWORDS = ("full", "comprehensive", "complete", "全面", "完整")
 
-    REVIEW_KEYWORDS = ("审查", "检查", "review", "inspect")
-    FIX_KEYWORDS = ("修复", "fix", "bug", "报错", "异常", "失败")
-    FULL_KEYWORDS = ("全面", "完整", "full", "comprehensive")
+    FIX_CHAIN = ["root_cause_analysis", "patch_generation", "test_verify"]
+    FULL_CHAIN = [
+        "code_review",
+        "root_cause_analysis",
+        "patch_generation",
+        "test_verify",
+        "summary",
+    ]
 
     def plan(self, request: BugfixRequest) -> PlanningResult:
         mode = request.mode
@@ -34,10 +39,10 @@ class RulePlanner:
         if mode == "review":
             return PlanningResult(["code_review"], "rule", "mode=review", confidence=1.0)
         if mode == "fix":
-            return PlanningResult(["bug_fix", "test_verify"], "rule", "mode=fix", confidence=1.0)
+            return PlanningResult(list(self.FIX_CHAIN), "rule", "mode=fix", confidence=1.0)
         if mode == "full":
             return PlanningResult(
-                ["code_review", "bug_fix", "test_verify", "summary"],
+                list(self.FULL_CHAIN),
                 "rule",
                 "mode=full",
                 confidence=1.0,
@@ -45,7 +50,7 @@ class RulePlanner:
 
         if self._contains(text, self.FULL_KEYWORDS):
             return PlanningResult(
-                ["code_review", "bug_fix", "test_verify", "summary"],
+                list(self.FULL_CHAIN),
                 "rule",
                 "matched full keywords",
                 confidence=0.95,
@@ -56,7 +61,7 @@ class RulePlanner:
             )
         if self._contains(text, self.FIX_KEYWORDS):
             return PlanningResult(
-                ["bug_fix", "test_verify"],
+                list(self.FIX_CHAIN),
                 "rule",
                 "matched fix keywords",
                 confidence=0.9,

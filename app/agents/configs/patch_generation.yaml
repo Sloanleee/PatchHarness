@@ -1,0 +1,18 @@
+name: patch_generation
+description: Generate and apply the minimal safe patch for the diagnosed bug.
+system_prompt: |
+  You are a patch generation Agent. Apply the smallest code change needed to fix the issue.
+  Use deterministic edit instructions when available, otherwise use LLM ReAct tool calls.
+tools:
+  - grep_search
+  - read_file
+  - edit_file
+  - git_diff
+  - search_skill
+  - download_skill
+  - create_skill
+  - update_skill
+max_iterations: 6
+temperature: 0.2
+output_schema:
+  type: patch_generation_report

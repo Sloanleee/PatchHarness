@@ -71,9 +71,12 @@ class StageFourToNineTests(unittest.TestCase):
                 )
             )
 
-            self.assertEqual(len(result.agent_reports), 1)
-            self.assertEqual(result.agent_reports[0].status, "failed")
-            self.assertIn("action_input", result.agent_reports[0].summary)
+            self.assertEqual(len(result.agent_reports), 2)
+            self.assertEqual(result.agent_reports[0].agent_name, "root_cause_analysis")
+            self.assertEqual(result.agent_reports[0].status, "completed")
+            self.assertEqual(result.agent_reports[1].agent_name, "patch_generation")
+            self.assertEqual(result.agent_reports[1].status, "failed")
+            self.assertIn("action_input", result.agent_reports[1].summary)
 
     def test_bug_fix_final_without_change_is_failure(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -94,9 +97,12 @@ class StageFourToNineTests(unittest.TestCase):
                 )
             )
 
-            self.assertEqual(len(result.agent_reports), 1)
-            self.assertEqual(result.agent_reports[0].status, "failed")
-            self.assertIn("before producing a code change", result.agent_reports[0].summary)
+            self.assertEqual(len(result.agent_reports), 2)
+            self.assertEqual(result.agent_reports[0].agent_name, "root_cause_analysis")
+            self.assertEqual(result.agent_reports[0].status, "completed")
+            self.assertEqual(result.agent_reports[1].agent_name, "patch_generation")
+            self.assertEqual(result.agent_reports[1].status, "failed")
+            self.assertIn("before producing a code change", result.agent_reports[1].summary)
 
     def test_llm_timeout_returns_failed_report_and_preserves_metrics(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -116,10 +122,13 @@ class StageFourToNineTests(unittest.TestCase):
                 )
             )
 
-            self.assertEqual(len(result.agent_reports), 1)
-            self.assertEqual(result.agent_reports[0].status, "failed")
-            self.assertIn("LLM request timed out", result.agent_reports[0].summary)
-            self.assertEqual(result.metrics.agent_calls, 1)
+            self.assertEqual(len(result.agent_reports), 2)
+            self.assertEqual(result.agent_reports[0].agent_name, "root_cause_analysis")
+            self.assertEqual(result.agent_reports[0].status, "completed")
+            self.assertEqual(result.agent_reports[1].agent_name, "patch_generation")
+            self.assertEqual(result.agent_reports[1].status, "failed")
+            self.assertIn("LLM request timed out", result.agent_reports[1].summary)
+            self.assertEqual(result.metrics.agent_calls, 2)
             self.assertEqual(result.metrics.llm_timeouts, 1)
 
     def test_llm_fallback_planner_can_trigger_planning_hitl(self):

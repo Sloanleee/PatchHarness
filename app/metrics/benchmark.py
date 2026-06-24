@@ -91,7 +91,14 @@ def build_default_cases() -> list[BenchmarkCase]:
             case_id += 1
     for _ in range(5):
         for text in fix_templates:
-            cases.append(BenchmarkCase(case_id, "fix", text, ["bug_fix", "test_verify"]))
+            cases.append(
+                BenchmarkCase(
+                    case_id,
+                    "fix",
+                    text,
+                    ["root_cause_analysis", "patch_generation", "test_verify"],
+                )
+            )
             case_id += 1
     for _ in range(5):
         for text in full_templates:
@@ -100,7 +107,13 @@ def build_default_cases() -> list[BenchmarkCase]:
                     case_id,
                     "full",
                     text,
-                    ["code_review", "bug_fix", "test_verify", "summary"],
+                    [
+                        "code_review",
+                        "root_cause_analysis",
+                        "patch_generation",
+                        "test_verify",
+                        "summary",
+                    ],
                 )
             )
             case_id += 1
@@ -234,6 +247,6 @@ def write_benchmark_summary(summary: BenchmarkSummary, path: str | Path) -> None
 
 ## Interpretation
 
-The benchmark makes the README optimization claim reproducible: simple review requests avoid unnecessary fix/test/summary agents, fix requests route to `bug_fix -> test_verify`, full requests keep the complete chain, and fuzzy requests safely default to review.
+The benchmark makes the README optimization claim reproducible: simple review requests avoid unnecessary fix/test/summary agents, fix requests route to `root_cause_analysis -> patch_generation -> test_verify`, full requests keep the complete chain, and fuzzy requests safely default to review.
 """
     path.write_text(content, encoding="utf-8")

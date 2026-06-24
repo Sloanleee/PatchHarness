@@ -10,8 +10,8 @@
 
 | Metric | Tokens |
 | --- | ---: |
-| Full injection | 161 |
-| Frontmatter only | 71 |
-| Saved tokens | 90 |
+| Full injection | 360 |
+| Frontmatter only | 131 |
+| Saved tokens | 229 |
 
-Saved token rate: 55.9%
+Saved token rate: 63.6%

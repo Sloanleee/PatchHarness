@@ -9,8 +9,8 @@ from app.schemas import BugfixRequest
 class LLMFallbackPlanner:
     CATEGORY_TO_AGENTS = {
         "review": ["code_review"],
-        "fix": ["bug_fix", "test_verify"],
-        "full": ["code_review", "bug_fix", "test_verify", "summary"],
+        "fix": ["root_cause_analysis", "patch_generation", "test_verify"],
+        "full": ["code_review", "root_cause_analysis", "patch_generation", "test_verify", "summary"],
     }
 
     def __init__(

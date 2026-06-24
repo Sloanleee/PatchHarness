@@ -11,16 +11,16 @@
 
 | Metric | Fixed Pipeline | Dynamic Planner |
 | --- | ---: | ---: |
-| Agent calls | 400 | 200 |
-| Estimated LLM calls | 800 | 400 |
+| Agent calls | 400 | 250 |
+| Estimated LLM calls | 800 | 500 |
 
 ## Key Numbers
 
-- Saved LLM calls: 400
-- Saved LLM call rate: 50.0%
+- Saved LLM calls: 300
+- Saved LLM call rate: 37.5%
 - Planner hit rate: 100.0%
-- Average planning latency: 0.0021 ms
+- Average planning latency: 0.0024 ms
 
 ## Interpretation
 
-The benchmark makes the README optimization claim reproducible: simple review requests avoid unnecessary fix/test/summary agents, fix requests route to `bug_fix -> test_verify`, full requests keep the complete chain, and fuzzy requests safely default to review.
+The benchmark makes the README optimization claim reproducible: simple review requests avoid unnecessary fix/test/summary agents, fix requests route to `root_cause_analysis -> patch_generation -> test_verify`, full requests keep the complete chain, and fuzzy requests safely default to review.
