@@ -1,4 +1,5 @@
 .runtime/
+.storage/
 .env
 .venv/
 __pycache__/

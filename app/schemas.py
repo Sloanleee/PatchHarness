@@ -79,6 +79,9 @@ class BugfixResponse:
     requires_human_approval: bool = False
     planning: dict[str, Any] = field(default_factory=dict)
     approval_events: list[dict[str, Any]] = field(default_factory=list)
+    run_id: str | None = None
+    failure_reason: str = ""
+    pending_approval: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -128,4 +131,7 @@ class BugfixResponse:
             "requires_human_approval": self.requires_human_approval,
             "planning": self.planning,
             "approval_events": self.approval_events,
+            "run_id": self.run_id,
+            "failure_reason": self.failure_reason,
+            "pending_approval": self.pending_approval,
         }

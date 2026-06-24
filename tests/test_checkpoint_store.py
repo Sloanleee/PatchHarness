@@ -3,6 +3,7 @@ import unittest
 from pathlib import Path
 
 from app.checkpoints import CheckpointInvalidError, CheckpointMissingError, CheckpointStore
+from app.schemas import BugfixResponse, WorkflowMetrics
 
 
 class CheckpointStoreTests(unittest.TestCase):
@@ -44,6 +45,28 @@ class CheckpointStoreTests(unittest.TestCase):
             store = CheckpointStore(Path(tmp))
             with self.assertRaises(CheckpointInvalidError):
                 store.load("broken")
+
+
+class ResponseSchemaTests(unittest.TestCase):
+    def test_response_includes_optional_run_and_approval_fields(self):
+        response = BugfixResponse(
+            request_id="request-1",
+            run_id="run-1",
+            planned_agents=[],
+            agent_reports=[],
+            changed_files=[],
+            test_result=None,
+            metrics=WorkflowMetrics(),
+            final_summary="paused",
+            requires_human_approval=True,
+            failure_reason="hitl_pause",
+            pending_approval={"resume_node": "test_verify"},
+        )
+
+        payload = response.to_dict()
+        self.assertEqual(payload["run_id"], "run-1")
+        self.assertEqual(payload["failure_reason"], "hitl_pause")
+        self.assertEqual(payload["pending_approval"], {"resume_node": "test_verify"})
 
 
 if __name__ == "__main__":
