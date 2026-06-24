@@ -54,6 +54,8 @@ class HitlResumeWorkflowTests(unittest.TestCase):
             self.assertTrue((checkpoint_root / f"{response.run_id}.json").exists())
             checkpoint = CheckpointStore(checkpoint_root).load(response.run_id)
             self.assertEqual(checkpoint["status"], "paused")
+            self.assertEqual(checkpoint["resume_from"], "test_verify")
+            self.assertIsNone(checkpoint["approval_decision"])
             self.assertEqual(
                 checkpoint["pending_approval"]["reason"],
                 response.pending_approval["reason"],

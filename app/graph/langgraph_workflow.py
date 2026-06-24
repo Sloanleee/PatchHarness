@@ -386,5 +386,7 @@ class LangGraphBugfixWorkflow:
             "executed_nodes": list(state.get("executed_nodes", [])),
             "events": list(state.get("events", [])),
             "pending_approval": state.get("pending_approval"),
+            "resume_from": state.get("resume_from"),
+            "approval_decision": state.get("approval_decision"),
             "response": response.to_dict() if response is not None else None,
         }
