@@ -18,6 +18,7 @@ class ProductionReleasePackTests(unittest.TestCase):
         self.assertIn("requirements.txt", content)
         self.assertIn("uvicorn", content)
         self.assertIn("app.main:app", content)
+        self.assertIn("PATCHHARNESS_LLM_PROVIDER=mock", content)
         self.assertIn("--host", content)
         self.assertIn("0.0.0.0", content)
         self.assertIn("--port", content)
@@ -55,6 +56,7 @@ class ProductionReleasePackTests(unittest.TestCase):
         service = compose["services"]["patchharness-api"]
         self.assertEqual(service["build"], ".")
         self.assertIn("8000:8000", service["ports"])
+        self.assertNotIn("env_file", service)
         self.assertIn("PATCHHARNESS_LLM_PROVIDER", service["environment"])
         self.assertEqual(
             service["environment"]["PATCHHARNESS_LLM_PROVIDER"],
