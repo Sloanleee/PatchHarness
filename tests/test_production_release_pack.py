@@ -46,6 +46,8 @@ class ProductionReleasePackTests(unittest.TestCase):
         ]:
             self.assertIn(pattern, ignored)
 
+        self.assertIn("**/.env", ignored)
+        self.assertIn(".superpowers/", ignored)
         self.assertIn("!demo/hitl_project/.env", ignored)
 
     def test_compose_exposes_api_service(self):
@@ -57,11 +59,27 @@ class ProductionReleasePackTests(unittest.TestCase):
         self.assertEqual(service["build"], ".")
         self.assertIn("8000:8000", service["ports"])
         self.assertNotIn("env_file", service)
-        self.assertIn("PATCHHARNESS_LLM_PROVIDER", service["environment"])
         self.assertEqual(
-            service["environment"]["PATCHHARNESS_LLM_PROVIDER"],
-            "${PATCHHARNESS_LLM_PROVIDER:-mock}",
+            service["environment"],
+            {
+                "PATCHHARNESS_LLM_PROVIDER": "${PATCHHARNESS_LLM_PROVIDER:-mock}",
+                "ARK_API_KEY": "${ARK_API_KEY:-}",
+                "ARK_MODEL": "${ARK_MODEL:-}",
+                "ARK_BASE_URL": "${ARK_BASE_URL:-https://ark.cn-beijing.volces.com/api/v3}",
+                "DEEPSEEK_API_KEY": "${DEEPSEEK_API_KEY:-}",
+                "DEEPSEEK_MODEL": "${DEEPSEEK_MODEL:-deepseek-chat}",
+                "DEEPSEEK_BASE_URL": "${DEEPSEEK_BASE_URL:-https://api.deepseek.com}",
+            },
         )
+
+    def test_dockerignore_excludes_superpowers_and_nested_env_files(self):
+        dockerignore = ROOT / ".dockerignore"
+        ignored = dockerignore.read_text(encoding="utf-8")
+
+        self.assertIn(".env", ignored)
+        self.assertIn("**/.env", ignored)
+        self.assertIn(".superpowers/", ignored)
+        self.assertIn("!demo/hitl_project/.env", ignored)
 
     def test_github_actions_runs_tests_evidence_and_uploads_artifact(self):
         workflow_path = ROOT / ".github" / "workflows" / "ci.yml"

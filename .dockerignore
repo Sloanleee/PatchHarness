@@ -1,8 +1,10 @@
 .git/
 .env
+**/.env
 .venv/
 .storage/
 .runtime/
+.superpowers/
 __pycache__/
 .pytest_cache/
 results/
