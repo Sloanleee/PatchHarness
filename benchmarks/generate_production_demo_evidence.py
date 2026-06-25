@@ -125,7 +125,7 @@ def _write_summary(
         f"- Paused requires human approval: `{paused.get('requires_human_approval')}`",
         f"- Paused failure reason: `{paused.get('failure_reason')}`",
         f"- Resumed requires human approval: `{resumed.get('requires_human_approval')}`",
-        f"- Resumed test returncode: `{((resumed.get('test_result') or {}).get('returncode'))}`",
+        f"- Test return code: `{((resumed.get('test_result') or {}).get('returncode'))}`",
         f"- Changed files: `{', '.join(resumed.get('changed_files') or [])}`",
         "",
         "## LangGraph Trace",

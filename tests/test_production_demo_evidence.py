@@ -28,6 +28,7 @@ class ProductionDemoEvidenceTests(unittest.TestCase):
             summary = (run_dir / "summary.md").read_text(encoding="utf-8")
             self.assertIn("LangGraph HITL Checkpoint/Resume Demo", summary)
             self.assertIn("hitl_pause", summary)
+            self.assertIn("Test return code: `0`", summary)
 
 
 if __name__ == "__main__":
