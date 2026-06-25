@@ -88,3 +88,15 @@ class ProductionReleasePackTests(unittest.TestCase):
         self.assertIn("results/production_demo/runs/**/paused_response.json", step_text)
         self.assertIn("results/production_demo/runs/**/resumed_response.json", step_text)
         self.assertIn("results/production_demo/runs/**/trace.json", step_text)
+
+    def test_env_example_defaults_to_mock_and_documents_real_providers(self):
+        env_example = ROOT / ".env.example"
+        content = env_example.read_text(encoding="utf-8")
+
+        self.assertIn("PATCHHARNESS_LLM_PROVIDER=mock", content)
+        self.assertIn("ARK_API_KEY=", content)
+        self.assertIn("ARK_MODEL=", content)
+        self.assertIn("ARK_BASE_URL=https://ark.cn-beijing.volces.com/api/v3", content)
+        self.assertIn("DEEPSEEK_API_KEY=", content)
+        self.assertIn("DEEPSEEK_MODEL=deepseek-chat", content)
+        self.assertIn("DEEPSEEK_BASE_URL=https://api.deepseek.com", content)
