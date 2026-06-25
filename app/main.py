@@ -21,6 +21,7 @@ else:
 
 if FastAPI is None:  # pragma: no cover
     app = None
+    workflow = BugfixWorkflow.from_default_configs()
 else:
     app = FastAPI(title="PatchHarness")
     workflow = BugfixWorkflow.from_default_configs()
@@ -39,6 +40,13 @@ class BugfixRequestModel(BaseModel):  # type: ignore[misc, valid-type]
         planning_confidence_threshold: float = 0.65
 
 
+class ResumeRequestModel(BaseModel):  # type: ignore[misc, valid-type]
+    if Field is not None:
+        approved: bool
+        reviewer: str = ""
+        comment: str = ""
+
+
 if FastAPI is not None:
 
     @app.get("/health")  # type: ignore[union-attr]
@@ -50,6 +58,32 @@ if FastAPI is not None:
         try:
             request = BugfixRequest(**payload.model_dump())
             response = workflow.run(request)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return response.to_dict()
+
+    @app.get("/runs/{run_id}")  # type: ignore[union-attr]
+    def get_run(run_id: str) -> dict[str, Any]:
+        try:
+            checkpoint_store = getattr(workflow, "checkpoint_store", None)
+            if checkpoint_store is None:
+                from app.checkpoints import CheckpointStore
+
+                checkpoint_store = CheckpointStore()
+                workflow.checkpoint_store = checkpoint_store
+            return checkpoint_store.load(run_id)
+        except Exception as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.post("/runs/{run_id}/resume")  # type: ignore[union-attr]
+    def resume_run(run_id: str, payload: ResumeRequestModel) -> dict[str, Any]:
+        try:
+            response = workflow.resume(
+                run_id,
+                approved=payload.approved,
+                reviewer=payload.reviewer,
+                comment=payload.comment,
+            )
         except Exception as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return response.to_dict()
