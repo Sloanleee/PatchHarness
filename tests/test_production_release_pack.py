@@ -117,3 +117,5 @@ class ProductionReleasePackTests(unittest.TestCase):
             "POST /runs/{run_id}/resume",
         ]:
             self.assertIn(phrase, readme)
+
+        self.assertNotIn("http://127.0.0.1:8000/docs", readme)

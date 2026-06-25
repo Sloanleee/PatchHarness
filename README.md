@@ -403,7 +403,6 @@ uvicorn app.main:app --reload
 
 ```text
 GET http://127.0.0.1:8000/health
-GET http://127.0.0.1:8000/docs
 ```
 
 ## Docker Quick Start
