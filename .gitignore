@@ -1,5 +1,6 @@
 .runtime/
 .storage/
+.superpowers/
 .env
 !demo/hitl_project/.env
 .venv/

@@ -10,16 +10,25 @@ class DeepSeekClient:
     def __init__(
         self,
         api_key: str | None = None,
-        model: str = "deepseek-chat",
-        base_url: str = "https://api.deepseek.com/chat/completions",
+        model: str | None = None,
+        base_url: str | None = None,
         timeout: float = 30.0,
     ) -> None:
         self.api_key = api_key or os.getenv("DEEPSEEK_API_KEY")
-        self.model = model
-        self.base_url = base_url
+        self.model = model or os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
+        self.base_url = self._normalize_base_url(
+            base_url or os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
+        )
         self.timeout = timeout
         if not self.api_key:
             raise RuntimeError("DEEPSEEK_API_KEY is required to use DeepSeekClient")
+
+    @staticmethod
+    def _normalize_base_url(base_url: str) -> str:
+        base_url = base_url.rstrip("/")
+        if base_url.endswith("/chat/completions"):
+            return base_url
+        return f"{base_url}/chat/completions"
 
     def complete_json(self, messages: list[dict[str, str]], **kwargs: Any) -> LLMResponse:
         try:

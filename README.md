@@ -403,8 +403,96 @@ uvicorn app.main:app --reload
 
 ```text
 GET http://127.0.0.1:8000/health
-GET http://127.0.0.1:8000/docs
 ```
+
+## Docker Quick Start
+
+```powershell
+docker compose up --build
+```
+
+Health check:
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:8000/health
+```
+
+Docker demo path defaults to deterministic mock-compatible execution and does not require real LLM keys.
+To use Ark or DeepSeek, copy `.env.example` to `.env`, fill the provider keys, and send requests with `"enable_llm": true`.
+
+## Docker Compose Quick Start
+
+The same `docker compose up --build` flow starts the API service for local demo use.
+Use the `PATCHHARNESS_LLM_PROVIDER=mock` default unless you want to switch to a real provider in your copied `.env`.
+
+## LangGraph HITL Demo
+
+Trigger a controlled sensitive edit pause:
+
+```powershell
+$paused = Invoke-RestMethod `
+  -Uri "http://127.0.0.1:8000/bugfix" `
+  -Method Post `
+  -ContentType "application/json" `
+  -Body '{
+    "task_description": "In `.env` replace `FEATURE_FLAG=off` with `FEATURE_FLAG=on`",
+    "workspace_path": "demo/hitl_project",
+    "mode": "fix",
+    "allow_edit": true,
+    "run_tests": true,
+    "test_command": "python -m unittest discover -s tests",
+    "enable_llm": false,
+    "use_langgraph": true
+  }'
+
+$runId = $paused.run_id
+```
+
+Inspect the paused run:
+
+```powershell
+Invoke-RestMethod -Uri "http://127.0.0.1:8000/runs/$runId" -Method Get
+```
+
+Approve and resume:
+
+```powershell
+Invoke-RestMethod `
+  -Uri "http://127.0.0.1:8000/runs/$runId/resume" `
+  -Method Post `
+  -ContentType "application/json" `
+  -Body '{
+    "approved": true,
+    "reviewer": "docker-demo",
+    "comment": "approved controlled .env edit"
+  }'
+```
+
+API endpoints:
+
+```text
+GET /runs/{run_id}
+POST /runs/{run_id}/resume
+```
+
+## Production Demo Evidence
+
+Generate local evidence:
+
+```powershell
+python benchmarks\generate_production_demo_evidence.py --provider mock
+```
+
+The command writes:
+
+```text
+summary.md
+paused_response.json
+resumed_response.json
+trace.json
+```
+
+GitHub Actions uploads the same evidence as artifact `patchharness-production-demo-evidence`.
 
 ---
 

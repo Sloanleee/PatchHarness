@@ -1,0 +1,15 @@
+services:
+  patchharness-api:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      PATCHHARNESS_LLM_PROVIDER: ${PATCHHARNESS_LLM_PROVIDER:-mock}
+      ARK_API_KEY: ${ARK_API_KEY:-}
+      ARK_MODEL: ${ARK_MODEL:-}
+      ARK_BASE_URL: ${ARK_BASE_URL:-https://ark.cn-beijing.volces.com/api/v3}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      DEEPSEEK_MODEL: ${DEEPSEEK_MODEL:-deepseek-chat}
+      DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
+    volumes:
+      - ./.storage:/app/.storage

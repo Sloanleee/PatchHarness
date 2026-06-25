@@ -5,6 +5,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from app.llm import MockLLMClient, VolcengineArkClient, create_llm_client
+from app.llm.deepseek_client import DeepSeekClient
 
 
 class LLMProviderTests(unittest.TestCase):
@@ -29,6 +30,36 @@ class LLMProviderTests(unittest.TestCase):
                 client = create_llm_client()
 
         self.assertIsInstance(client, MockLLMClient)
+
+    def test_deepseek_client_uses_env_model_and_base_url(self):
+        with patch.dict(
+            os.environ,
+            {
+                "DEEPSEEK_API_KEY": "deepseek-key",
+                "DEEPSEEK_MODEL": "deepseek-custom",
+                "DEEPSEEK_BASE_URL": "https://deepseek.example/v1",
+            },
+            clear=True,
+        ):
+            client = DeepSeekClient()
+
+        self.assertEqual(client.api_key, "deepseek-key")
+        self.assertEqual(client.model, "deepseek-custom")
+        self.assertEqual(
+            client.base_url,
+            "https://deepseek.example/v1/chat/completions",
+        )
+
+    def test_deepseek_client_accepts_complete_chat_completions_url(self):
+        client = DeepSeekClient(
+            api_key="deepseek-key",
+            base_url="https://deepseek.example/v1/chat/completions",
+        )
+
+        self.assertEqual(
+            client.base_url,
+            "https://deepseek.example/v1/chat/completions",
+        )
 
     def test_volcengine_client_uses_httpx_responses_api_shape(self):
         calls = {}

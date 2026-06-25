@@ -1,0 +1,139 @@
+import unittest
+from pathlib import Path
+
+import yaml
+
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+class ProductionReleasePackTests(unittest.TestCase):
+    def test_dockerfile_runs_fastapi_api(self):
+        dockerfile = ROOT / "Dockerfile"
+        self.assertTrue(dockerfile.exists())
+        content = dockerfile.read_text(encoding="utf-8")
+
+        self.assertIn("FROM python:", content)
+        self.assertIn("pip install", content)
+        self.assertIn("requirements.txt", content)
+        self.assertIn("uvicorn", content)
+        self.assertIn("app.main:app", content)
+        self.assertIn("PATCHHARNESS_LLM_PROVIDER=mock", content)
+        self.assertIn("--host", content)
+        self.assertIn("0.0.0.0", content)
+        self.assertIn("--port", content)
+        self.assertIn("8000", content)
+
+    def test_dockerignore_excludes_private_and_generated_files(self):
+        dockerignore = ROOT / ".dockerignore"
+        self.assertTrue(dockerignore.exists())
+        ignored = dockerignore.read_text(encoding="utf-8")
+
+        for pattern in [
+            ".env",
+            ".venv/",
+            ".storage/",
+            ".runtime/",
+            "__pycache__/",
+            ".pytest_cache/",
+            "results/",
+            "docs/",
+            "README1.md",
+            "READMEv2.md",
+            "plan.md",
+            "problem-solution.md",
+            ".git/",
+        ]:
+            self.assertIn(pattern, ignored)
+
+        self.assertIn("**/.env", ignored)
+        self.assertIn(".superpowers/", ignored)
+        self.assertIn("!demo/hitl_project/.env", ignored)
+
+    def test_compose_exposes_api_service(self):
+        compose_path = ROOT / "docker-compose.yml"
+        self.assertTrue(compose_path.exists())
+        compose = yaml.safe_load(compose_path.read_text(encoding="utf-8"))
+
+        service = compose["services"]["patchharness-api"]
+        self.assertEqual(service["build"], ".")
+        self.assertIn("8000:8000", service["ports"])
+        self.assertNotIn("env_file", service)
+        self.assertEqual(
+            service["environment"],
+            {
+                "PATCHHARNESS_LLM_PROVIDER": "${PATCHHARNESS_LLM_PROVIDER:-mock}",
+                "ARK_API_KEY": "${ARK_API_KEY:-}",
+                "ARK_MODEL": "${ARK_MODEL:-}",
+                "ARK_BASE_URL": "${ARK_BASE_URL:-https://ark.cn-beijing.volces.com/api/v3}",
+                "DEEPSEEK_API_KEY": "${DEEPSEEK_API_KEY:-}",
+                "DEEPSEEK_MODEL": "${DEEPSEEK_MODEL:-deepseek-chat}",
+                "DEEPSEEK_BASE_URL": "${DEEPSEEK_BASE_URL:-https://api.deepseek.com}",
+            },
+        )
+
+    def test_dockerignore_excludes_superpowers_and_nested_env_files(self):
+        dockerignore = ROOT / ".dockerignore"
+        ignored = dockerignore.read_text(encoding="utf-8")
+
+        self.assertIn(".env", ignored)
+        self.assertIn("**/.env", ignored)
+        self.assertIn(".superpowers/", ignored)
+        self.assertIn("!demo/hitl_project/.env", ignored)
+
+    def test_github_actions_runs_tests_evidence_and_uploads_artifact(self):
+        workflow_path = ROOT / ".github" / "workflows" / "ci.yml"
+        self.assertTrue(workflow_path.exists())
+        workflow = yaml.safe_load(workflow_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(workflow["name"], "CI")
+        self.assertIn("push", workflow[True])
+        self.assertIn("pull_request", workflow[True])
+
+        jobs = workflow["jobs"]
+        self.assertIn("test-and-evidence", jobs)
+        steps = jobs["test-and-evidence"]["steps"]
+        step_text = "\n".join(str(step) for step in steps)
+
+        self.assertIn("python -m unittest discover -s tests", step_text)
+        self.assertIn(
+            "python benchmarks/generate_production_demo_evidence.py --provider mock",
+            step_text,
+        )
+        self.assertIn("actions/upload-artifact", step_text)
+        self.assertIn("patchharness-production-demo-evidence", step_text)
+        self.assertIn("results/production_demo/runs/**/summary.md", step_text)
+        self.assertIn("results/production_demo/runs/**/paused_response.json", step_text)
+        self.assertIn("results/production_demo/runs/**/resumed_response.json", step_text)
+        self.assertIn("results/production_demo/runs/**/trace.json", step_text)
+
+    def test_env_example_defaults_to_mock_and_documents_real_providers(self):
+        env_example = ROOT / ".env.example"
+        content = env_example.read_text(encoding="utf-8")
+
+        self.assertIn("PATCHHARNESS_LLM_PROVIDER=mock", content)
+        self.assertIn("ARK_API_KEY=", content)
+        self.assertIn("ARK_MODEL=", content)
+        self.assertIn("ARK_BASE_URL=https://ark.cn-beijing.volces.com/api/v3", content)
+        self.assertIn("DEEPSEEK_API_KEY=", content)
+        self.assertIn("DEEPSEEK_MODEL=deepseek-chat", content)
+        self.assertIn("DEEPSEEK_BASE_URL=https://api.deepseek.com", content)
+
+    def test_readme_documents_docker_ci_and_evidence_demo(self):
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+
+        for phrase in [
+            "Docker",
+            "docker compose up --build",
+            "http://127.0.0.1:8000/health",
+            "generate_production_demo_evidence.py --provider mock",
+            "patchharness-production-demo-evidence",
+            "PATCHHARNESS_LLM_PROVIDER=mock",
+            "enable_llm",
+            "use_langgraph",
+            "GET /runs/{run_id}",
+            "POST /runs/{run_id}/resume",
+        ]:
+            self.assertIn(phrase, readme)
+
+        self.assertNotIn("http://127.0.0.1:8000/docs", readme)
