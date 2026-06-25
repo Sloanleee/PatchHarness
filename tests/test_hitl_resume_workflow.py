@@ -61,6 +61,77 @@ class HitlResumeWorkflowTests(unittest.TestCase):
                 response.pending_approval["reason"],
             )
 
+    def test_approval_resumes_sensitive_edit_and_runs_tests(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            (workspace / ".env").write_text("TOKEN=old\n", encoding="utf-8")
+            tests_dir = workspace / "tests"
+            tests_dir.mkdir()
+            (tests_dir / "test_env.py").write_text(
+                "import unittest\n"
+                "from pathlib import Path\n\n"
+                "class EnvTests(unittest.TestCase):\n"
+                "    def test_token_updated(self):\n"
+                "        self.assertIn('TOKEN=new', Path('.env').read_text())\n",
+                encoding="utf-8",
+            )
+            workflow = self._workflow(root / "checkpoints")
+
+            paused = workflow.run(
+                BugfixRequest(
+                    task_description="In `.env` replace `TOKEN=old` with `TOKEN=new`",
+                    workspace_path=str(workspace),
+                    mode="fix",
+                    allow_edit=True,
+                    run_tests=True,
+                    test_command="python -m unittest discover -s tests",
+                    use_langgraph=True,
+                )
+            )
+            resumed = workflow.resume(
+                paused.run_id,
+                approved=True,
+                reviewer="unit-test",
+                comment="approved",
+            )
+
+            self.assertFalse(resumed.requires_human_approval)
+            self.assertEqual(resumed.failure_reason, "")
+            self.assertEqual(resumed.test_result["returncode"], 0)
+            self.assertEqual((workspace / ".env").read_text(encoding="utf-8"), "TOKEN=new\n")
+            self.assertIn("test_verify", resumed.planning["langgraph"]["nodes"])
+
+    def test_rejection_does_not_apply_sensitive_edit(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            (workspace / ".env").write_text("TOKEN=old\n", encoding="utf-8")
+            workflow = self._workflow(root / "checkpoints")
+
+            paused = workflow.run(
+                BugfixRequest(
+                    task_description="In `.env` replace `TOKEN=old` with `TOKEN=new`",
+                    workspace_path=str(workspace),
+                    mode="fix",
+                    allow_edit=True,
+                    run_tests=True,
+                    use_langgraph=True,
+                )
+            )
+            rejected = workflow.resume(
+                paused.run_id,
+                approved=False,
+                reviewer="unit-test",
+                comment="rejected",
+            )
+
+            self.assertTrue(rejected.requires_human_approval)
+            self.assertEqual(rejected.failure_reason, "approval_rejected")
+            self.assertEqual((workspace / ".env").read_text(encoding="utf-8"), "TOKEN=old\n")
+
 
 if __name__ == "__main__":
     unittest.main()

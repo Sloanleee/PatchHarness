@@ -84,6 +84,112 @@ class LangGraphBugfixWorkflow:
         self._attach_langgraph_metadata(response, state)
         return response
 
+    def resume(
+        self,
+        run_id: str,
+        approved: bool,
+        reviewer: str = "",
+        comment: str = "",
+    ) -> BugfixResponse:
+        checkpoint = self.checkpoint_store.load(run_id)
+        request = self._request_from_checkpoint(checkpoint)
+        planning = self.workflow.planner.plan(request)
+        metrics = MetricsTracker(planned_by=planning.planned_by)
+        reports = self._reports_from_checkpoint(checkpoint)
+        pending_approval = checkpoint.get("pending_approval") or {}
+        decision = {
+            "approved": approved,
+            "reviewer": reviewer,
+            "comment": comment,
+        }
+
+        if not approved:
+            response = BugfixResponse(
+                request_id=str(uuid4()),
+                run_id=run_id,
+                planned_agents=list(planning.agents),
+                agent_reports=reports,
+                changed_files=sorted({path for report in reports for path in report.changed_files}),
+                test_result=None,
+                metrics=metrics.snapshot(),
+                final_summary="Workflow rejected by human reviewer.",
+                requires_human_approval=True,
+                planning={
+                    **_planning_payload(planning),
+                    "langgraph": {
+                        "enabled": True,
+                        "nodes": list(checkpoint.get("executed_nodes", [])),
+                    },
+                    "langgraph_events": list(checkpoint.get("events", [])),
+                },
+                approval_events=[pending_approval, decision],
+                failure_reason="approval_rejected",
+                pending_approval=pending_approval,
+            )
+            self.checkpoint_store.update(
+                run_id,
+                status="rejected",
+                approval_decision=decision,
+                response=response.to_dict(),
+            )
+            return response
+
+        reports = self._apply_approved_pending_action(
+            request,
+            reports,
+            pending_approval,
+            metrics,
+        )
+        skill_manager = SkillManager.from_default_dir()
+        llm_client = self.workflow._resolve_llm_client(request)
+        resume_state = self.graph.invoke(
+            {
+                "run_id": run_id,
+                "request": request,
+                "workspace": Path(request.workspace_path).resolve(),
+                "metrics": metrics,
+                "llm_client": llm_client,
+                "planning": planning,
+                "context_manager": ContextManager.from_request(request, planning.agents),
+                "skill_manager": skill_manager,
+                "mcp_client": MCPClient(
+                    MCPServer(create_default_tools(metrics=metrics, skill_manager=skill_manager)),
+                    metrics=metrics,
+                ),
+                "hitl_policy": HitlPolicy(),
+                "compressor": ContextCompressor(
+                    llm_client=llm_client if request.enable_llm else None,
+                    metrics=metrics,
+                ),
+                "reports": reports,
+                "events": [
+                    *checkpoint.get("events", []),
+                    {
+                        "event": "approval_granted",
+                        "reviewer": reviewer,
+                        "comment": comment,
+                    },
+                ],
+                "executed_nodes": list(checkpoint.get("executed_nodes", [])),
+                "pending_approval": None,
+                "approval_decision": decision,
+                "resume_from": pending_approval.get("resume_node"),
+            }
+        )
+        response = resume_state["response"]
+        response.run_id = run_id
+        response.failure_reason = ""
+        response.pending_approval = None
+        response.requires_human_approval = False
+        self._attach_langgraph_metadata(response, resume_state)
+        self.checkpoint_store.update(
+            run_id,
+            status="completed",
+            approval_decision=decision,
+            response=response.to_dict(),
+        )
+        return response
+
     def _compile_graph(self):
         try:
             from langgraph.graph import END, StateGraph
@@ -222,6 +328,11 @@ class LangGraphBugfixWorkflow:
                     status=report.status,
                 ),
                 "executed_nodes": [*state.get("executed_nodes", []), agent_name],
+                "resume_from": (
+                    None
+                    if state.get("resume_from") == agent_name
+                    else state.get("resume_from")
+                ),
             }
 
         return _run_agent
@@ -233,6 +344,9 @@ class LangGraphBugfixWorkflow:
             return "build_response"
         if planning.requires_human_approval:
             return "hitl_pause"
+        resume_from = state.get("resume_from")
+        if resume_from in AGENT_NODES:
+            return resume_from
         reports = state.get("reports", [])
         if len(reports) >= len(planning.agents):
             return "build_response"
@@ -362,6 +476,64 @@ class LangGraphBugfixWorkflow:
             "risk": str(event.get("risk") or "high"),
             "action": action,
         }
+
+    @staticmethod
+    def _request_from_checkpoint(checkpoint: dict[str, Any]) -> BugfixRequest:
+        return BugfixRequest(**checkpoint["request"])
+
+    @staticmethod
+    def _reports_from_checkpoint(checkpoint: dict[str, Any]) -> list[AgentReport]:
+        return [AgentReport(**item) for item in checkpoint.get("reports", [])]
+
+    def _apply_approved_pending_action(
+        self,
+        request: BugfixRequest,
+        reports: list[AgentReport],
+        pending_approval: dict[str, Any],
+        metrics: MetricsTracker,
+    ) -> list[AgentReport]:
+        if not reports:
+            return reports
+        last_report = reports[-1]
+        action = pending_approval.get("action") or {}
+        tool = action.get("tool")
+        payload = dict(action.get("input") or {})
+        if tool != "edit_file":
+            return reports
+
+        workspace = Path(request.workspace_path).resolve()
+        skill_manager = SkillManager.from_default_dir()
+        tools = create_default_tools(metrics=metrics, skill_manager=skill_manager)
+        payload["allow_edit"] = request.allow_edit
+        result = tools.run("edit_file", workspace, **payload)
+        last_report.observations.append(
+            {
+                "tool": result.tool,
+                "ok": result.ok,
+                "data": result.data,
+                "error": result.error,
+            }
+        )
+        if result.ok and "path" in result.data:
+            changed_path = str(result.data["path"])
+            if changed_path not in last_report.changed_files:
+                last_report.changed_files.append(changed_path)
+            diff_result = tools.run("git_diff", workspace, path=changed_path)
+            last_report.observations.append(
+                {
+                    "tool": diff_result.tool,
+                    "ok": diff_result.ok,
+                    "data": diff_result.data,
+                    "error": diff_result.error,
+                }
+            )
+            last_report.status = "completed"
+            last_report.requires_human_approval = False
+            last_report.summary = "Approved sensitive edit was applied."
+        else:
+            last_report.status = "failed"
+            last_report.summary = f"Approved sensitive edit failed: {result.error}"
+        return reports
 
     def _checkpoint_payload(
         self,

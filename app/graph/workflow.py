@@ -48,6 +48,22 @@ class BugfixWorkflow:
                 pass
         return self._run_sequential(request)
 
+    def resume(
+        self,
+        run_id: str,
+        approved: bool,
+        reviewer: str = "",
+        comment: str = "",
+    ) -> BugfixResponse:
+        from app.graph.langgraph_workflow import LangGraphBugfixWorkflow
+
+        return LangGraphBugfixWorkflow(self).resume(
+            run_id,
+            approved=approved,
+            reviewer=reviewer,
+            comment=comment,
+        )
+
     def _run_sequential(self, request: BugfixRequest) -> BugfixResponse:
         workspace = Path(request.workspace_path).resolve()
         if not workspace.exists() or not workspace.is_dir():
