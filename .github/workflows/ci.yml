@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test-and-evidence:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Run tests
+        run: python -m unittest discover -s tests
+
+      - name: Generate production demo evidence
+        run: python benchmarks/generate_production_demo_evidence.py --provider mock
+
+      - name: Upload production demo evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: patchharness-production-demo-evidence
+          path: |
+            results/production_demo/runs/**/summary.md
+            results/production_demo/runs/**/paused_response.json
+            results/production_demo/runs/**/resumed_response.json
+            results/production_demo/runs/**/trace.json

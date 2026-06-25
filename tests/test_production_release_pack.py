@@ -62,3 +62,29 @@ class ProductionReleasePackTests(unittest.TestCase):
             service["environment"]["PATCHHARNESS_LLM_PROVIDER"],
             "${PATCHHARNESS_LLM_PROVIDER:-mock}",
         )
+
+    def test_github_actions_runs_tests_evidence_and_uploads_artifact(self):
+        workflow_path = ROOT / ".github" / "workflows" / "ci.yml"
+        self.assertTrue(workflow_path.exists())
+        workflow = yaml.safe_load(workflow_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(workflow["name"], "CI")
+        self.assertIn("push", workflow[True])
+        self.assertIn("pull_request", workflow[True])
+
+        jobs = workflow["jobs"]
+        self.assertIn("test-and-evidence", jobs)
+        steps = jobs["test-and-evidence"]["steps"]
+        step_text = "\n".join(str(step) for step in steps)
+
+        self.assertIn("python -m unittest discover -s tests", step_text)
+        self.assertIn(
+            "python benchmarks/generate_production_demo_evidence.py --provider mock",
+            step_text,
+        )
+        self.assertIn("actions/upload-artifact", step_text)
+        self.assertIn("patchharness-production-demo-evidence", step_text)
+        self.assertIn("results/production_demo/runs/**/summary.md", step_text)
+        self.assertIn("results/production_demo/runs/**/paused_response.json", step_text)
+        self.assertIn("results/production_demo/runs/**/resumed_response.json", step_text)
+        self.assertIn("results/production_demo/runs/**/trace.json", step_text)
