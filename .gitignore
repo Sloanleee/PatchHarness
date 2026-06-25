@@ -1,6 +1,7 @@
 .runtime/
 .storage/
 .env
+!demo/hitl_project/.env
 .venv/
 __pycache__/
 .pytest_cache/
