@@ -1,0 +1,16 @@
+.git/
+.env
+.venv/
+.storage/
+.runtime/
+__pycache__/
+.pytest_cache/
+results/
+docs/
+README1.md
+READMEv2.md
+plan.md
+problem-solution.md
+*.pyc
+
+!demo/hitl_project/.env
