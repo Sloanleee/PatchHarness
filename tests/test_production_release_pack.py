@@ -100,3 +100,20 @@ class ProductionReleasePackTests(unittest.TestCase):
         self.assertIn("DEEPSEEK_API_KEY=", content)
         self.assertIn("DEEPSEEK_MODEL=deepseek-chat", content)
         self.assertIn("DEEPSEEK_BASE_URL=https://api.deepseek.com", content)
+
+    def test_readme_documents_docker_ci_and_evidence_demo(self):
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+
+        for phrase in [
+            "Docker",
+            "docker compose up --build",
+            "http://127.0.0.1:8000/health",
+            "generate_production_demo_evidence.py --provider mock",
+            "patchharness-production-demo-evidence",
+            "PATCHHARNESS_LLM_PROVIDER=mock",
+            "enable_llm",
+            "use_langgraph",
+            "GET /runs/{run_id}",
+            "POST /runs/{run_id}/resume",
+        ]:
+            self.assertIn(phrase, readme)
