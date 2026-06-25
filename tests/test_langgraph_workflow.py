@@ -1,6 +1,7 @@
 import importlib.util
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 from app.agents import AgentRegistry
@@ -110,6 +111,31 @@ class LangGraphWorkflowTests(unittest.TestCase):
                 ["root_cause_analysis", "patch_generation"],
             )
             self.assertEqual((workspace / ".env").read_text(encoding="utf-8"), "TOKEN=old\n")
+
+
+class LangGraphRuntimeErrorTests(unittest.TestCase):
+    def test_explicit_langgraph_runtime_error_is_not_sequential_fallback(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            workflow = BugfixWorkflow(
+                AgentRegistry.load_from_dir(Path("app/agents/configs"))
+            )
+
+            with mock.patch(
+                "app.graph.langgraph_workflow.LangGraphBugfixWorkflow"
+            ) as workflow_class:
+                workflow_class.return_value.run.side_effect = RuntimeError("langgraph exploded")
+
+                with self.assertRaisesRegex(RuntimeError, "langgraph exploded"):
+                    workflow.run(
+                        BugfixRequest(
+                            task_description="review workspace",
+                            workspace_path=str(workspace),
+                            mode="review",
+                            run_tests=False,
+                            use_langgraph=True,
+                        )
+                    )
 
 
 if __name__ == "__main__":

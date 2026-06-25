@@ -6,7 +6,7 @@ from typing import Any, TypedDict
 from uuid import uuid4
 
 from app.agents import BaseAgent
-from app.checkpoints import CheckpointStore
+from app.checkpoints import CheckpointConflictError, CheckpointStore
 from app.context import ContextCompressor, ContextManager
 from app.graph.workflow import _build_final_summary, _planning_payload
 from app.hitl import HitlPolicy
@@ -92,11 +92,22 @@ class LangGraphBugfixWorkflow:
         comment: str = "",
     ) -> BugfixResponse:
         checkpoint = self.checkpoint_store.load(run_id)
+        pending_approval = checkpoint.get("pending_approval")
+        resume_from = checkpoint.get("resume_from")
+        if (
+            checkpoint.get("status") != "paused"
+            or not isinstance(pending_approval, dict)
+            or not pending_approval
+            or not pending_approval.get("resume_node")
+            or not resume_from
+        ):
+            raise CheckpointConflictError(
+                f"Cannot resume run {run_id}: checkpoint is not paused with pending approval"
+            )
         request = self._request_from_checkpoint(checkpoint)
         planning = self.workflow.planner.plan(request)
         metrics = MetricsTracker(planned_by=planning.planned_by)
         reports = self._reports_from_checkpoint(checkpoint)
-        pending_approval = checkpoint.get("pending_approval") or {}
         decision = {
             "approved": approved,
             "reviewer": reviewer,
@@ -126,9 +137,24 @@ class LangGraphBugfixWorkflow:
                 failure_reason="approval_rejected",
                 pending_approval=pending_approval,
             )
+            events = [
+                *checkpoint.get("events", []),
+                {
+                    "event": "approval_rejected",
+                    "reviewer": reviewer,
+                    "comment": comment,
+                },
+            ]
+            response.planning["langgraph_events"] = events
             self.checkpoint_store.update(
                 run_id,
                 status="rejected",
+                reports=[asdict(report) for report in reports],
+                metrics=asdict(metrics.snapshot()),
+                events=events,
+                executed_nodes=list(checkpoint.get("executed_nodes", [])),
+                pending_approval=None,
+                resume_from=None,
                 approval_decision=decision,
                 response=response.to_dict(),
             )
@@ -185,6 +211,12 @@ class LangGraphBugfixWorkflow:
         self.checkpoint_store.update(
             run_id,
             status="completed",
+            reports=[asdict(report) for report in resume_state.get("reports", [])],
+            metrics=asdict(resume_state["metrics"].snapshot()),
+            events=list(resume_state.get("events", [])),
+            executed_nodes=list(resume_state.get("executed_nodes", [])),
+            pending_approval=None,
+            resume_from=None,
             approval_decision=decision,
             response=response.to_dict(),
         )

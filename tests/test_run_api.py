@@ -68,6 +68,12 @@ class RunApiTests(unittest.TestCase):
             self.assertFalse(resumed_body["requires_human_approval"])
             self.assertEqual(resumed_body["test_result"]["returncode"], 0)
 
+            replay = client.post(
+                f"/runs/{run_id}/resume",
+                json={"approved": True, "reviewer": "api-test", "comment": "replay"},
+            )
+            self.assertEqual(replay.status_code, 409)
+
 
 if __name__ == "__main__":
     unittest.main()

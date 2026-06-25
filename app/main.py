@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import asdict
 from typing import Any
 
+from app.checkpoints import CheckpointConflictError
 from app.graph import BugfixWorkflow
 from app.schemas import BugfixRequest
 
@@ -84,6 +85,8 @@ if FastAPI is not None:
                 reviewer=payload.reviewer,
                 comment=payload.comment,
             )
+        except CheckpointConflictError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
         except Exception as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return response.to_dict()

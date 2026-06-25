@@ -15,6 +15,10 @@ class CheckpointInvalidError(RuntimeError):
     pass
 
 
+class CheckpointConflictError(RuntimeError):
+    pass
+
+
 class CheckpointStore:
     def __init__(self, root: Path | str = ".storage/checkpoints") -> None:
         self.root = Path(root)

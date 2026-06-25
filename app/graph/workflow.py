@@ -40,12 +40,9 @@ class BugfixWorkflow:
 
     def run(self, request: BugfixRequest) -> BugfixResponse:
         if request.use_langgraph:
-            try:
-                from app.graph.langgraph_workflow import LangGraphBugfixWorkflow
+            from app.graph.langgraph_workflow import LangGraphBugfixWorkflow
 
-                return LangGraphBugfixWorkflow(self).run(request)
-            except RuntimeError:
-                pass
+            return LangGraphBugfixWorkflow(self).run(request)
         return self._run_sequential(request)
 
     def resume(
