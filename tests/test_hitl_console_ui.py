@@ -73,6 +73,7 @@ class HITLConsoleUITests(unittest.TestCase):
 
         for phrase in [
             "async function checkHealth",
+            "renderError(error);",
             "async function triggerRun",
             "async function inspectRun",
             "async function resumeRun",
