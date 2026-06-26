@@ -4,10 +4,347 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>PatchHarness HITL Console</title>
+  <style>
+    :root {
+      --graphite-950: #101418;
+      --graphite-850: #182027;
+      --slate-line: #34424f;
+      --text-main: #edf3f7;
+      --text-muted: #91a3af;
+      --node-idle: #263442;
+      --node-active: #19c7d4;
+      --node-paused: #f2a93b;
+      --node-success: #4fce7a;
+      --node-failed: #ff5d5d;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--graphite-950);
+      color: var(--text-main);
+      font-family: "Segoe UI", Arial, sans-serif;
+    }
+
+    button {
+      border: 1px solid var(--slate-line);
+      background: #202a34;
+      color: var(--text-main);
+      padding: 8px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      font: inherit;
+    }
+
+    button:disabled {
+      cursor: not-allowed;
+      opacity: 0.45;
+    }
+
+    button.primary {
+      border-color: var(--node-active);
+    }
+
+    button.approve {
+      border-color: var(--node-success);
+    }
+
+    button.reject {
+      border-color: var(--node-failed);
+    }
+
+    pre {
+      margin: 0;
+      white-space: pre-wrap;
+      word-break: break-word;
+      color: var(--text-main);
+      font: 12px/1.5 Consolas, "SFMono-Regular", monospace;
+    }
+
+    .shell {
+      min-height: 100vh;
+      display: grid;
+      grid-template-rows: auto 1fr;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 20px;
+      border-bottom: 1px solid var(--slate-line);
+      background: #121920;
+    }
+
+    .topbar h1 {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 650;
+      letter-spacing: 0;
+    }
+
+    .health {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--text-muted);
+      font-size: 13px;
+    }
+
+    .health-dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 999px;
+      background: var(--node-paused);
+    }
+
+    .health-dot.ok {
+      background: var(--node-success);
+    }
+
+    .health-dot.offline {
+      background: var(--node-failed);
+    }
+
+    .workspace {
+      display: grid;
+      grid-template-columns: 320px minmax(0, 1fr);
+      gap: 14px;
+      padding: 14px;
+    }
+
+    .panel {
+      background: var(--graphite-850);
+      border: 1px solid var(--slate-line);
+      border-radius: 8px;
+      padding: 14px;
+      min-width: 0;
+    }
+
+    .panel h2 {
+      margin: 0 0 12px;
+      color: var(--text-main);
+      font-size: 14px;
+      font-weight: 650;
+    }
+
+    .scenario-grid {
+      display: grid;
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+
+    .label {
+      color: var(--text-muted);
+      display: block;
+      font-size: 12px;
+      margin-bottom: 4px;
+    }
+
+    .value {
+      border: 1px solid var(--slate-line);
+      border-radius: 6px;
+      padding: 8px;
+      background: #111820;
+      font-size: 13px;
+      line-height: 1.4;
+    }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .canvas {
+      display: grid;
+      gap: 10px;
+    }
+
+    .node {
+      display: grid;
+      grid-template-columns: 12px minmax(0, 1fr) auto;
+      gap: 10px;
+      align-items: center;
+      min-height: 42px;
+      padding: 10px;
+      border: 1px solid var(--slate-line);
+      border-radius: 7px;
+      background: var(--node-idle);
+    }
+
+    .node-marker {
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+      background: var(--text-muted);
+    }
+
+    .node-name {
+      font-family: Consolas, "SFMono-Regular", monospace;
+      font-size: 13px;
+    }
+
+    .node-state {
+      color: var(--text-muted);
+      font-size: 12px;
+    }
+
+    .node.active {
+      border-color: var(--node-active);
+    }
+
+    .node.active .node-marker {
+      background: var(--node-active);
+    }
+
+    .node.paused {
+      border-color: var(--node-paused);
+    }
+
+    .node.paused .node-marker {
+      background: var(--node-paused);
+    }
+
+    .node.success {
+      border-color: var(--node-success);
+    }
+
+    .node.success .node-marker {
+      background: var(--node-success);
+    }
+
+    .node.failed {
+      border-color: var(--node-failed);
+    }
+
+    .node.failed .node-marker {
+      background: var(--node-failed);
+    }
+
+    .lower {
+      display: grid;
+      grid-column: 1 / -1;
+      grid-template-columns: 320px minmax(0, 1fr);
+      gap: 14px;
+    }
+
+    .approval-status {
+      display: grid;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    .tabs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    .tab.active {
+      border-color: var(--node-active);
+    }
+
+    .evidence-body {
+      min-height: 220px;
+      max-height: 420px;
+      overflow: auto;
+      border: 1px solid var(--slate-line);
+      border-radius: 7px;
+      background: #0d1319;
+      padding: 12px;
+    }
+
+    @media (max-width: 900px) {
+      .workspace,
+      .lower {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
 </head>
 <body>
-  <main>
-    <h1>PatchHarness HITL Console</h1>
-  </main>
+  <div class="shell">
+    <header class="topbar">
+      <h1>PatchHarness HITL Console</h1>
+      <div class="health">
+        <span id="health-dot" class="health-dot"></span>
+        <span id="health-label">checking /health</span>
+      </div>
+    </header>
+
+    <main class="workspace">
+      <section class="panel">
+        <h2>Scenario</h2>
+        <div class="scenario-grid">
+          <div>
+            <span class="label">Demo</span>
+            <div class="value">Sensitive .env edit</div>
+          </div>
+          <div>
+            <span class="label">Workspace</span>
+            <div class="value">demo/hitl_project</div>
+          </div>
+          <div>
+            <span class="label">Task</span>
+            <div class="value">In `.env` replace `FEATURE_FLAG=off` with `FEATURE_FLAG=on`</div>
+          </div>
+          <div>
+            <span class="label">API path contract</span>
+            <div class="value">/health /bugfix /runs/ /resume</div>
+          </div>
+        </div>
+        <div class="actions">
+          <button id="trigger-button" class="primary">Trigger run</button>
+          <button id="inspect-button">Inspect</button>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>LangGraph Run Canvas</h2>
+        <div id="graph-canvas" class="canvas">
+          <div class="node" data-node="validate_workspace"><span class="node-marker"></span><span class="node-name">validate_workspace</span><span class="node-state">idle</span></div>
+          <div class="node" data-node="plan_agents"><span class="node-marker"></span><span class="node-name">plan_agents</span><span class="node-state">idle</span></div>
+          <div class="node" data-node="root_cause_analysis"><span class="node-marker"></span><span class="node-name">root_cause_analysis</span><span class="node-state">idle</span></div>
+          <div class="node" data-node="patch_generation"><span class="node-marker"></span><span class="node-name">patch_generation</span><span class="node-state">idle</span></div>
+          <div class="node" data-node="hitl_pause"><span class="node-marker"></span><span class="node-name">hitl_pause</span><span class="node-state">idle</span></div>
+          <div class="node" data-node="test_verify"><span class="node-marker"></span><span class="node-name">test_verify</span><span class="node-state">idle</span></div>
+          <div class="node" data-node="build_response"><span class="node-marker"></span><span class="node-name">build_response</span><span class="node-state">idle</span></div>
+        </div>
+      </section>
+
+      <section class="lower">
+        <aside class="panel">
+          <h2>Approval Panel</h2>
+          <div class="approval-status">
+            <div><span class="label">Run id</span><div id="run-id" class="value">none</div></div>
+            <div><span class="label">Status</span><div id="run-status" class="value">idle</div></div>
+            <div><span class="label">Pending approval</span><div id="pending-approval" class="value">none</div></div>
+          </div>
+          <div class="actions">
+            <button id="approve-button" class="approve" disabled>Approve</button>
+            <button id="reject-button" class="reject" disabled>Reject</button>
+          </div>
+        </aside>
+
+        <section class="panel">
+          <h2>Evidence</h2>
+          <div class="tabs">
+            <button class="tab active" data-tab="reports">Agent Reports</button>
+            <button class="tab" data-tab="test">Test Result</button>
+            <button class="tab" data-tab="metrics">Metrics</button>
+            <button class="tab" data-tab="raw">Raw JSON</button>
+          </div>
+          <div class="evidence-body">
+            <pre id="evidence-output">No run yet.</pre>
+          </div>
+        </section>
+      </section>
+    </main>
+  </div>
 </body>
 </html>

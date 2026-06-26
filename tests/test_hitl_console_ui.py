@@ -24,6 +24,41 @@ class HITLConsoleUITests(unittest.TestCase):
         self.assertIn("text/html", response.headers["content-type"])
         self.assertIn("PatchHarness HITL Console", response.text)
 
+    def test_hitl_console_contains_required_ui_contract(self):
+        warnings.filterwarnings(
+            "ignore",
+            message="Using `httpx` with `starlette.testclient` is deprecated.*",
+        )
+        from fastapi.testclient import TestClient
+
+        client = TestClient(app)
+        response = client.get("/ui/hitl")
+        self.assertEqual(response.status_code, 200)
+        html = response.text
+
+        for phrase in [
+            "/health",
+            "/bugfix",
+            "/runs/",
+            "/resume",
+            "Trigger run",
+            "Inspect",
+            "Approve",
+            "Reject",
+            "validate_workspace",
+            "plan_agents",
+            "root_cause_analysis",
+            "patch_generation",
+            "hitl_pause",
+            "test_verify",
+            "build_response",
+            "Agent Reports",
+            "Test Result",
+            "Metrics",
+            "Raw JSON",
+        ]:
+            self.assertIn(phrase, html)
+
 
 if __name__ == "__main__":
     unittest.main()
