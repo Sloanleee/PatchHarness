@@ -59,6 +59,34 @@ class HITLConsoleUITests(unittest.TestCase):
         ]:
             self.assertIn(phrase, html)
 
+    def test_hitl_console_contains_browser_interaction_logic(self):
+        warnings.filterwarnings(
+            "ignore",
+            message="Using `httpx` with `starlette.testclient` is deprecated.*",
+        )
+        from fastapi.testclient import TestClient
+
+        client = TestClient(app)
+        response = client.get("/ui/hitl")
+        self.assertEqual(response.status_code, 200)
+        html = response.text
+
+        for phrase in [
+            "async function checkHealth",
+            "async function triggerRun",
+            "async function inspectRun",
+            "async function resumeRun",
+            "function renderResponse",
+            "FEATURE_FLAG=off",
+            "FEATURE_FLAG=on",
+            "approved controlled .env edit",
+            "rejected controlled .env edit",
+            "test_result",
+            "changed_files",
+            "agent_reports",
+        ]:
+            self.assertIn(phrase, html)
+
 
 if __name__ == "__main__":
     unittest.main()

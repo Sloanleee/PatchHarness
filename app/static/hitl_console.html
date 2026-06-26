@@ -346,5 +346,291 @@
       </section>
     </main>
   </div>
+  <script>
+    const HITL_REQUEST = {
+      task_description: "In `.env` replace `FEATURE_FLAG=off` with `FEATURE_FLAG=on`",
+      workspace_path: "demo/hitl_project",
+      mode: "fix",
+      allow_edit: true,
+      run_tests: true,
+      test_command: "python -m unittest discover -s tests",
+      enable_llm: false,
+      use_langgraph: true
+    };
+
+    const nodes = [
+      "validate_workspace",
+      "plan_agents",
+      "root_cause_analysis",
+      "patch_generation",
+      "hitl_pause",
+      "test_verify",
+      "build_response"
+    ];
+
+    const state = {
+      runId: null,
+      lastResponse: null,
+      activeTab: "reports"
+    };
+
+    const elements = {
+      healthDot: document.getElementById("health-dot"),
+      healthLabel: document.getElementById("health-label"),
+      triggerButton: document.getElementById("trigger-button"),
+      inspectButton: document.getElementById("inspect-button"),
+      approveButton: document.getElementById("approve-button"),
+      rejectButton: document.getElementById("reject-button"),
+      runId: document.getElementById("run-id"),
+      runStatus: document.getElementById("run-status"),
+      pendingApproval: document.getElementById("pending-approval"),
+      evidenceOutput: document.getElementById("evidence-output")
+    };
+
+    function formatJson(value) {
+      return JSON.stringify(value, null, 2);
+    }
+
+    function setBusy(isBusy) {
+      elements.triggerButton.disabled = isBusy;
+      elements.inspectButton.disabled = isBusy || !state.runId;
+    }
+
+    function setApprovalEnabled(enabled) {
+      elements.approveButton.disabled = !enabled;
+      elements.rejectButton.disabled = !enabled;
+    }
+
+    function traceFromResponse(response) {
+      const events = response && (response.langgraph_events || response.context_events || []);
+      const eventNodes = events
+        .map((event) => event.node || event.name || event.event || "")
+        .filter((name) => nodes.includes(name));
+
+      if (eventNodes.length > 0) {
+        return eventNodes;
+      }
+
+      const reports = response && response.agent_reports ? response.agent_reports : [];
+      const reportNodes = reports
+        .map((report) => report.agent_name)
+        .filter((name) => nodes.includes(name));
+
+      if (reportNodes.length > 0) {
+        return ["validate_workspace", "plan_agents", ...reportNodes, "build_response"];
+      }
+
+      if (response && response.requires_human_approval) {
+        return ["validate_workspace", "plan_agents", "root_cause_analysis", "patch_generation", "hitl_pause"];
+      }
+
+      return [];
+    }
+
+    function renderGraph(response) {
+      const trace = traceFromResponse(response);
+      const hasFailure = response && response.final_summary && response.final_summary.toLowerCase().includes("failed");
+      const paused = response && response.requires_human_approval;
+
+      document.querySelectorAll(".node").forEach((nodeElement) => {
+        const nodeName = nodeElement.dataset.node;
+        const stateLabel = nodeElement.querySelector(".node-state");
+        nodeElement.classList.remove("active", "paused", "success", "failed");
+
+        if (trace.includes(nodeName)) {
+          nodeElement.classList.add("success");
+          stateLabel.textContent = "visited";
+        } else {
+          stateLabel.textContent = "idle";
+        }
+
+        if (paused && nodeName === "hitl_pause") {
+          nodeElement.classList.remove("success");
+          nodeElement.classList.add("paused");
+          stateLabel.textContent = "paused";
+        }
+
+        if (hasFailure && trace[trace.length - 1] === nodeName) {
+          nodeElement.classList.remove("success", "paused");
+          nodeElement.classList.add("failed");
+          stateLabel.textContent = "failed";
+        }
+      });
+    }
+
+    function renderEvidence(response) {
+      if (!response) {
+        elements.evidenceOutput.textContent = "No run yet.";
+        return;
+      }
+
+      if (state.activeTab === "reports") {
+        elements.evidenceOutput.textContent = formatJson(response.agent_reports || []);
+        return;
+      }
+
+      if (state.activeTab === "test") {
+        elements.evidenceOutput.textContent = formatJson({
+          changed_files: response.changed_files || [],
+          test_result: response.test_result || null,
+          final_summary: response.final_summary || ""
+        });
+        return;
+      }
+
+      if (state.activeTab === "metrics") {
+        elements.evidenceOutput.textContent = formatJson({
+          planned_agents: response.planned_agents || [],
+          metrics: response.metrics || {},
+          approval_events: response.approval_events || []
+        });
+        return;
+      }
+
+      elements.evidenceOutput.textContent = formatJson(response);
+    }
+
+    function renderResponse(response) {
+      state.lastResponse = response;
+      state.runId = response.run_id || state.runId;
+
+      elements.runId.textContent = state.runId || "none";
+      elements.runStatus.textContent = response.requires_human_approval
+        ? "paused"
+        : (response.failure_reason || "completed");
+      elements.pendingApproval.textContent = response.pending_approval
+        ? formatJson(response.pending_approval)
+        : "none";
+
+      setApprovalEnabled(Boolean(response.requires_human_approval && state.runId));
+      elements.inspectButton.disabled = !state.runId;
+      renderGraph(response);
+      renderEvidence(response);
+    }
+
+    function renderError(error) {
+      const message = error && error.message ? error.message : String(error);
+      elements.runStatus.textContent = "failed";
+      elements.evidenceOutput.textContent = message;
+    }
+
+    async function readJson(response) {
+      const text = await response.text();
+      try {
+        return text ? JSON.parse(text) : {};
+      } catch (error) {
+        return { raw: text, parse_error: String(error) };
+      }
+    }
+
+    async function checkHealth() {
+      try {
+        const response = await fetch("/health");
+        const body = await readJson(response);
+        if (response.ok && body.status === "ok") {
+          elements.healthDot.classList.add("ok");
+          elements.healthDot.classList.remove("offline");
+          elements.healthLabel.textContent = "health: ok";
+          return;
+        }
+        throw new Error(formatJson(body));
+      } catch (error) {
+        elements.healthDot.classList.add("offline");
+        elements.healthDot.classList.remove("ok");
+        elements.healthLabel.textContent = "health: offline";
+      }
+    }
+
+    async function triggerRun() {
+      setBusy(true);
+      setApprovalEnabled(false);
+      elements.runStatus.textContent = "running";
+      try {
+        const response = await fetch("/bugfix", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(HITL_REQUEST)
+        });
+        const body = await readJson(response);
+        if (!response.ok) {
+          throw new Error(formatJson(body));
+        }
+        renderResponse(body);
+      } catch (error) {
+        renderError(error);
+      } finally {
+        setBusy(false);
+      }
+    }
+
+    async function inspectRun() {
+      if (!state.runId) {
+        return;
+      }
+      setBusy(true);
+      try {
+        const response = await fetch(`/runs/${state.runId}`);
+        const body = await readJson(response);
+        if (!response.ok) {
+          throw new Error(formatJson(body));
+        }
+        state.lastResponse = body;
+        elements.pendingApproval.textContent = body.pending_approval
+          ? formatJson(body.pending_approval)
+          : "none";
+        elements.runStatus.textContent = body.status || "inspected";
+        elements.evidenceOutput.textContent = formatJson(body);
+      } catch (error) {
+        renderError(error);
+      } finally {
+        setBusy(false);
+      }
+    }
+
+    async function resumeRun(approved) {
+      if (!state.runId) {
+        return;
+      }
+      setApprovalEnabled(false);
+      elements.runStatus.textContent = approved ? "approving" : "rejecting";
+      try {
+        const response = await fetch(`/runs/${state.runId}/resume`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            approved,
+            reviewer: "hitl-console",
+            comment: approved
+              ? "approved controlled .env edit"
+              : "rejected controlled .env edit"
+          })
+        });
+        const body = await readJson(response);
+        if (!response.ok) {
+          throw new Error(formatJson(body));
+        }
+        renderResponse(body);
+      } catch (error) {
+        renderError(error);
+      }
+    }
+
+    document.querySelectorAll(".tab").forEach((tab) => {
+      tab.addEventListener("click", () => {
+        document.querySelectorAll(".tab").forEach((item) => item.classList.remove("active"));
+        tab.classList.add("active");
+        state.activeTab = tab.dataset.tab;
+        renderEvidence(state.lastResponse);
+      });
+    });
+
+    elements.triggerButton.addEventListener("click", triggerRun);
+    elements.inspectButton.addEventListener("click", inspectRun);
+    elements.approveButton.addEventListener("click", () => resumeRun(true));
+    elements.rejectButton.addEventListener("click", () => resumeRun(false));
+    elements.inspectButton.disabled = true;
+
+    checkHealth();
+  </script>
 </body>
 </html>
