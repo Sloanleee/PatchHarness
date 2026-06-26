@@ -126,6 +126,8 @@ class ProductionReleasePackTests(unittest.TestCase):
             "Docker",
             "docker compose up --build",
             "http://127.0.0.1:8000/health",
+            "http://127.0.0.1:8000/ui/hitl",
+            "HITL Console",
             "generate_production_demo_evidence.py --provider mock",
             "patchharness-production-demo-evidence",
             "PATCHHARNESS_LLM_PROVIDER=mock",

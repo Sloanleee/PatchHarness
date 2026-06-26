@@ -427,6 +427,14 @@ Use the `PATCHHARNESS_LLM_PROVIDER=mock` default unless you want to switch to a 
 
 ## LangGraph HITL Demo
 
+Browser demo console:
+
+```text
+http://127.0.0.1:8000/ui/hitl
+```
+
+The HITL Console can trigger the controlled `.env` edit, show the LangGraph node trace, inspect the checkpoint, and approve or reject the pending action from the browser.
+
 Trigger a controlled sensitive edit pause:
 
 ```powershell
