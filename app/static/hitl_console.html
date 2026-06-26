@@ -463,32 +463,33 @@
       return normalizeTraceNodes(value);
     }
 
+    function appendTraceNodes(trace, nextNodes) {
+      nextNodes.forEach((nodeName) => {
+        if (!trace.includes(nodeName)) {
+          trace.push(nodeName);
+        }
+      });
+    }
+
     function traceFromResponse(value) {
       const payload = responsePayload(value);
+      const trace = [];
 
-      const wrapperNodes = normalizeTraceNodes(value && value.executed_nodes);
-      if (wrapperNodes.length > 0) {
-        return wrapperNodes;
-      }
+      appendTraceNodes(trace, normalizeTraceNodes(value && value.executed_nodes));
 
-      const planningNodes = normalizeTraceNodes(payload && payload.planning && payload.planning.langgraph && payload.planning.langgraph.nodes);
-      if (planningNodes.length > 0) {
-        return planningNodes;
-      }
+      appendTraceNodes(
+        trace,
+        normalizeTraceNodes(payload && payload.planning && payload.planning.langgraph && payload.planning.langgraph.nodes)
+      );
 
-      const wrapperEvents = traceNodesFromEvents(value && value.events);
-      if (wrapperEvents.length > 0) {
-        return wrapperEvents;
-      }
+      appendTraceNodes(trace, traceNodesFromEvents(value && value.events));
 
-      const planningEvents = traceNodesFromEvents(payload && payload.planning && payload.planning.langgraph_events);
-      if (planningEvents.length > 0) {
-        return planningEvents;
-      }
+      appendTraceNodes(trace, traceNodesFromEvents(payload && payload.planning && payload.planning.langgraph_events));
 
-      const legacyEvents = traceNodesFromEvents(payload && (payload.langgraph_events || payload.context_events));
-      if (legacyEvents.length > 0) {
-        return legacyEvents;
+      appendTraceNodes(trace, traceNodesFromEvents(payload && (payload.langgraph_events || payload.context_events)));
+
+      if (trace.length > 0) {
+        return trace;
       }
 
       const reports = payload && payload.agent_reports ? payload.agent_reports : [];

@@ -126,16 +126,17 @@ class HITLConsoleUITests(unittest.TestCase):
         html = response.text
 
         expected_order = [
-            "const wrapperNodes = normalizeTraceNodes(value && value.executed_nodes);",
-            "const planningNodes = normalizeTraceNodes(payload && payload.planning && payload.planning.langgraph && payload.planning.langgraph.nodes);",
-            "const wrapperEvents = traceNodesFromEvents(value && value.events);",
-            "const planningEvents = traceNodesFromEvents(payload && payload.planning && payload.planning.langgraph_events);",
+            "appendTraceNodes(trace, normalizeTraceNodes(value && value.executed_nodes));",
+            "normalizeTraceNodes(payload && payload.planning && payload.planning.langgraph && payload.planning.langgraph.nodes)",
+            "appendTraceNodes(trace, traceNodesFromEvents(value && value.events));",
+            "appendTraceNodes(trace, traceNodesFromEvents(payload && payload.planning && payload.planning.langgraph_events));",
         ]
         cursor = -1
         for phrase in expected_order:
             next_cursor = html.find(phrase)
             self.assertGreater(next_cursor, cursor, phrase)
             cursor = next_cursor
+        self.assertIn("function appendTraceNodes(trace, nextNodes)", html)
 
     def test_hitl_console_treats_rejection_as_terminal(self):
         warnings.filterwarnings(
