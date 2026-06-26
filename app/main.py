@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict
+from pathlib import Path
 from typing import Any
 
 from app.checkpoints import CheckpointConflictError
@@ -9,10 +10,12 @@ from app.schemas import BugfixRequest
 
 try:
     from fastapi import FastAPI, HTTPException
+    from fastapi.responses import HTMLResponse
     from pydantic import BaseModel, Field
 except ModuleNotFoundError as exc:  # pragma: no cover - exercised when deps are missing
     FastAPI = None  # type: ignore[assignment]
     HTTPException = None  # type: ignore[assignment]
+    HTMLResponse = None  # type: ignore[assignment]
     BaseModel = object  # type: ignore[assignment]
     Field = None  # type: ignore[assignment]
     _IMPORT_ERROR = exc
@@ -26,6 +29,9 @@ if FastAPI is None:  # pragma: no cover
 else:
     app = FastAPI(title="PatchHarness")
     workflow = BugfixWorkflow.from_default_configs()
+
+STATIC_DIR = Path(__file__).resolve().parent / "static"
+HITL_CONSOLE_PATH = STATIC_DIR / "hitl_console.html"
 
 
 class BugfixRequestModel(BaseModel):  # type: ignore[misc, valid-type]
@@ -49,6 +55,13 @@ class ResumeRequestModel(BaseModel):  # type: ignore[misc, valid-type]
 
 
 if FastAPI is not None:
+
+    @app.get("/ui/hitl", response_class=HTMLResponse)  # type: ignore[union-attr]
+    def hitl_console() -> str:
+        try:
+            return HITL_CONSOLE_PATH.read_text(encoding="utf-8")
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=404, detail="HITL console page not found") from exc
 
     @app.get("/health")  # type: ignore[union-attr]
     def health() -> dict[str, str]:
