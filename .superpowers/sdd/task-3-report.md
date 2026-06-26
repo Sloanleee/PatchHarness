@@ -36,7 +36,7 @@ TDD flow
    - Passed.
 8. Ran `C:\D\code\harness\.venv\Scripts\python.exe -m unittest discover -s tests`.
    - Passed.
-9. Commit: pending for health error surfacing fix.
+9. Commit: `cba213c` (`Show health check errors in HITL console`).
 
 Notes
 -----
@@ -46,3 +46,15 @@ Notes
 Concerns
 --------
 - None at the moment.
+
+Resume retry fix
+----------------
+- Updated `resumeRun()` so a failed `/runs/{run_id}/resume` request still renders the concrete error and restores `Approve` / `Reject` when a `runId` is present.
+- Added a static contract assertion in `tests/test_hitl_console_ui.py` for `setApprovalEnabled(Boolean(state.runId));` to guard the retry-enable path.
+
+Verification
+------------
+1. Ran `C:\D\code\harness\.venv\Scripts\python.exe -m unittest tests.test_hitl_console_ui`.
+   - Passed.
+2. Ran `C:\D\code\harness\.venv\Scripts\python.exe -m unittest discover -s tests`.
+   - Passed.

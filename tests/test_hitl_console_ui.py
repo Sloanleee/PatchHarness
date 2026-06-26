@@ -77,6 +77,7 @@ class HITLConsoleUITests(unittest.TestCase):
             "async function triggerRun",
             "async function inspectRun",
             "async function resumeRun",
+            "setApprovalEnabled(Boolean(state.runId));",
             "function renderResponse",
             "FEATURE_FLAG=off",
             "FEATURE_FLAG=on",

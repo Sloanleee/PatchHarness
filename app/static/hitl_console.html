@@ -613,6 +613,7 @@
         renderResponse(body);
       } catch (error) {
         renderError(error);
+        setApprovalEnabled(Boolean(state.runId));
       }
     }
 
