@@ -312,6 +312,7 @@
           <div class="node" data-node="root_cause_analysis"><span class="node-marker"></span><span class="node-name">root_cause_analysis</span><span class="node-state">idle</span></div>
           <div class="node" data-node="patch_generation"><span class="node-marker"></span><span class="node-name">patch_generation</span><span class="node-state">idle</span></div>
           <div class="node" data-node="hitl_pause"><span class="node-marker"></span><span class="node-name">hitl_pause</span><span class="node-state">idle</span></div>
+          <div class="node" data-node="approval_rejected"><span class="node-marker"></span><span class="node-name">approval_rejected</span><span class="node-state">idle</span></div>
           <div class="node" data-node="test_verify"><span class="node-marker"></span><span class="node-name">test_verify</span><span class="node-state">idle</span></div>
           <div class="node" data-node="build_response"><span class="node-marker"></span><span class="node-name">build_response</span><span class="node-state">idle</span></div>
         </div>
@@ -364,6 +365,7 @@
       "root_cause_analysis",
       "patch_generation",
       "hitl_pause",
+      "approval_rejected",
       "test_verify",
       "build_response"
     ];
@@ -371,6 +373,8 @@
     const state = {
       runId: null,
       lastResponse: null,
+      rawResponse: null,
+      payload: null,
       activeTab: "reports"
     };
 
@@ -401,17 +405,93 @@
       elements.rejectButton.disabled = !enabled;
     }
 
-    function traceFromResponse(response) {
-      const events = response && (response.langgraph_events || response.context_events || []);
-      const eventNodes = events
-        .map((event) => event.node || event.name || event.event || "")
-        .filter((name) => nodes.includes(name));
+    function responsePayload(value) {
+      if (value && value.response && typeof value.response === "object") {
+        return value.response;
+      }
+      return value || {};
+    }
 
-      if (eventNodes.length > 0) {
-        return eventNodes;
+    function pendingApprovalFromResponse(value) {
+      if (!value) {
+        return null;
+      }
+      const payload = responsePayload(value);
+      return value.pending_approval || payload.pending_approval || null;
+    }
+
+    function statusFromResponse(value) {
+      if (!value) {
+        return "idle";
       }
 
-      const reports = response && response.agent_reports ? response.agent_reports : [];
+      const payload = responsePayload(value);
+      if (payload && payload.failure_reason === "approval_rejected") {
+        return "approval_rejected";
+      }
+
+      if (value.status) {
+        return value.status;
+      }
+
+      if (payload.requires_human_approval) {
+        return "paused";
+      }
+
+      return payload.failure_reason || "completed";
+    }
+
+    function normalizeTraceNodes(value) {
+      if (!Array.isArray(value)) {
+        return [];
+      }
+
+      return value
+        .map((item) => {
+          if (typeof item === "string") {
+            return item;
+          }
+          if (!item || typeof item !== "object") {
+            return "";
+          }
+          return item.node || item.node_name || item.name || item.id || item.event || item.status || "";
+        })
+        .filter((name) => nodes.includes(name));
+    }
+
+    function traceNodesFromEvents(value) {
+      return normalizeTraceNodes(value);
+    }
+
+    function traceFromResponse(value) {
+      const payload = responsePayload(value);
+
+      const wrapperNodes = normalizeTraceNodes(value && value.executed_nodes);
+      if (wrapperNodes.length > 0) {
+        return wrapperNodes;
+      }
+
+      const planningNodes = normalizeTraceNodes(payload && payload.planning && payload.planning.langgraph && payload.planning.langgraph.nodes);
+      if (planningNodes.length > 0) {
+        return planningNodes;
+      }
+
+      const wrapperEvents = traceNodesFromEvents(value && value.events);
+      if (wrapperEvents.length > 0) {
+        return wrapperEvents;
+      }
+
+      const planningEvents = traceNodesFromEvents(payload && payload.planning && payload.planning.langgraph_events);
+      if (planningEvents.length > 0) {
+        return planningEvents;
+      }
+
+      const legacyEvents = traceNodesFromEvents(payload && (payload.langgraph_events || payload.context_events));
+      if (legacyEvents.length > 0) {
+        return legacyEvents;
+      }
+
+      const reports = payload && payload.agent_reports ? payload.agent_reports : [];
       const reportNodes = reports
         .map((report) => report.agent_name)
         .filter((name) => nodes.includes(name));
@@ -420,7 +500,7 @@
         return ["validate_workspace", "plan_agents", ...reportNodes, "build_response"];
       }
 
-      if (response && response.requires_human_approval) {
+      if (payload && payload.requires_human_approval) {
         return ["validate_workspace", "plan_agents", "root_cause_analysis", "patch_generation", "hitl_pause"];
       }
 
@@ -429,8 +509,11 @@
 
     function renderGraph(response) {
       const trace = traceFromResponse(response);
-      const hasFailure = response && response.final_summary && response.final_summary.toLowerCase().includes("failed");
-      const paused = response && response.requires_human_approval;
+      const payload = responsePayload(response);
+      const status = statusFromResponse(response);
+      const hasFailure = status === "approval_rejected"
+        || (payload && payload.final_summary && payload.final_summary.toLowerCase().includes("failed"));
+      const paused = payload && payload.requires_human_approval && status !== "approval_rejected";
 
       document.querySelectorAll(".node").forEach((nodeElement) => {
         const nodeName = nodeElement.dataset.node;
@@ -463,46 +546,52 @@
         elements.evidenceOutput.textContent = "No run yet.";
         return;
       }
+      const payload = state.payload || responsePayload(response);
 
       if (state.activeTab === "reports") {
-        elements.evidenceOutput.textContent = formatJson(response.agent_reports || []);
+        elements.evidenceOutput.textContent = formatJson(payload.agent_reports || []);
         return;
       }
 
       if (state.activeTab === "test") {
         elements.evidenceOutput.textContent = formatJson({
-          changed_files: response.changed_files || [],
-          test_result: response.test_result || null,
-          final_summary: response.final_summary || ""
+          changed_files: payload.changed_files || [],
+          test_result: payload.test_result || null,
+          final_summary: payload.final_summary || ""
         });
         return;
       }
 
       if (state.activeTab === "metrics") {
         elements.evidenceOutput.textContent = formatJson({
-          planned_agents: response.planned_agents || [],
-          metrics: response.metrics || {},
-          approval_events: response.approval_events || []
+          planned_agents: payload.planned_agents || [],
+          metrics: payload.metrics || {},
+          approval_events: payload.approval_events || []
         });
         return;
       }
 
-      elements.evidenceOutput.textContent = formatJson(response);
+      elements.evidenceOutput.textContent = formatJson(state.rawResponse);
     }
 
     function renderResponse(response) {
+      const payload = responsePayload(response);
+      const status = statusFromResponse(response);
+      const pendingApproval = pendingApprovalFromResponse(response);
+      const isRejected = status === "approval_rejected";
+
       state.lastResponse = response;
-      state.runId = response.run_id || state.runId;
+      state.rawResponse = response;
+      state.payload = payload;
+      state.runId = response.run_id || payload.run_id || state.runId;
 
       elements.runId.textContent = state.runId || "none";
-      elements.runStatus.textContent = response.requires_human_approval
-        ? "paused"
-        : (response.failure_reason || "completed");
-      elements.pendingApproval.textContent = response.pending_approval
-        ? formatJson(response.pending_approval)
+      elements.runStatus.textContent = status;
+      elements.pendingApproval.textContent = pendingApproval
+        ? formatJson(pendingApproval)
         : "none";
 
-      setApprovalEnabled(Boolean(response.requires_human_approval && state.runId));
+      setApprovalEnabled(Boolean(payload.requires_human_approval && state.runId && !isRejected));
       elements.inspectButton.disabled = !state.runId;
       renderGraph(response);
       renderEvidence(response);
@@ -575,12 +664,7 @@
         if (!response.ok) {
           throw new Error(formatJson(body));
         }
-        state.lastResponse = body;
-        elements.pendingApproval.textContent = body.pending_approval
-          ? formatJson(body.pending_approval)
-          : "none";
-        elements.runStatus.textContent = body.status || "inspected";
-        elements.evidenceOutput.textContent = formatJson(body);
+        renderResponse(body);
       } catch (error) {
         renderError(error);
       } finally {

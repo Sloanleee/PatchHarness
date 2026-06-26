@@ -89,6 +89,98 @@ class HITLConsoleUITests(unittest.TestCase):
         ]:
             self.assertIn(phrase, html)
 
+    def test_hitl_console_normalizes_checkpoint_wrappers(self):
+        warnings.filterwarnings(
+            "ignore",
+            message="Using `httpx` with `starlette.testclient` is deprecated.*",
+        )
+        from fastapi.testclient import TestClient
+
+        client = TestClient(app)
+        response = client.get("/ui/hitl")
+        self.assertEqual(response.status_code, 200)
+        html = response.text
+
+        for phrase in [
+            "function responsePayload(value)",
+            "value.response",
+            "function pendingApprovalFromResponse(value)",
+            "return value.pending_approval || payload.pending_approval || null;",
+            "state.rawResponse = response;",
+            "state.payload = payload;",
+            "renderResponse(body);",
+            "elements.evidenceOutput.textContent = formatJson(state.rawResponse);",
+        ]:
+            self.assertIn(phrase, html)
+
+    def test_hitl_console_uses_backend_trace_fields_in_order(self):
+        warnings.filterwarnings(
+            "ignore",
+            message="Using `httpx` with `starlette.testclient` is deprecated.*",
+        )
+        from fastapi.testclient import TestClient
+
+        client = TestClient(app)
+        response = client.get("/ui/hitl")
+        self.assertEqual(response.status_code, 200)
+        html = response.text
+
+        expected_order = [
+            "const wrapperNodes = normalizeTraceNodes(value && value.executed_nodes);",
+            "const planningNodes = normalizeTraceNodes(payload && payload.planning && payload.planning.langgraph && payload.planning.langgraph.nodes);",
+            "const wrapperEvents = traceNodesFromEvents(value && value.events);",
+            "const planningEvents = traceNodesFromEvents(payload && payload.planning && payload.planning.langgraph_events);",
+        ]
+        cursor = -1
+        for phrase in expected_order:
+            next_cursor = html.find(phrase)
+            self.assertGreater(next_cursor, cursor, phrase)
+            cursor = next_cursor
+
+    def test_hitl_console_treats_rejection_as_terminal(self):
+        warnings.filterwarnings(
+            "ignore",
+            message="Using `httpx` with `starlette.testclient` is deprecated.*",
+        )
+        from fastapi.testclient import TestClient
+
+        client = TestClient(app)
+        response = client.get("/ui/hitl")
+        self.assertEqual(response.status_code, 200)
+        html = response.text
+
+        for phrase in [
+            'if (payload && payload.failure_reason === "approval_rejected") {',
+            'return "approval_rejected";',
+            'const isRejected = status === "approval_rejected";',
+            'setApprovalEnabled(Boolean(payload.requires_human_approval && state.runId && !isRejected));',
+            'approval_rejected',
+        ]:
+            self.assertIn(phrase, html)
+
+    def test_hitl_console_evidence_tabs_use_nested_payload(self):
+        warnings.filterwarnings(
+            "ignore",
+            message="Using `httpx` with `starlette.testclient` is deprecated.*",
+        )
+        from fastapi.testclient import TestClient
+
+        client = TestClient(app)
+        response = client.get("/ui/hitl")
+        self.assertEqual(response.status_code, 200)
+        html = response.text
+
+        for phrase in [
+            "const payload = state.payload || responsePayload(response);",
+            "payload.agent_reports || []",
+            "changed_files: payload.changed_files || []",
+            "test_result: payload.test_result || null",
+            "planned_agents: payload.planned_agents || []",
+            "metrics: payload.metrics || {}",
+            "approval_events: payload.approval_events || []",
+        ]:
+            self.assertIn(phrase, html)
+
 
 if __name__ == "__main__":
     unittest.main()
