@@ -55,8 +55,8 @@ class BudgetedLLMClient:
                 f"LLM token budget reached: {snapshot.total_tokens}/{self.max_tokens}"
             )
 
-        response = self.inner.complete_json(messages, **kwargs)
         self._calls += 1
+        response = self.inner.complete_json(messages, **kwargs)
         self._prompt_tokens += response.prompt_tokens
         self._completion_tokens += response.completion_tokens
         return response

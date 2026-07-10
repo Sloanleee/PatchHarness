@@ -18,6 +18,15 @@ class FakeClient:
         return next(self.responses)
 
 
+class FailingClient:
+    def __init__(self):
+        self.calls = 0
+
+    def complete_json(self, messages, **kwargs):
+        self.calls += 1
+        raise TimeoutError("provider timed out")
+
+
 class BudgetedLLMClientTests(unittest.TestCase):
     def test_counts_calls_and_tokens(self):
         inner = FakeClient([LLMResponse("{}", prompt_tokens=11, completion_tokens=7)])
@@ -63,6 +72,18 @@ class BudgetedLLMClientTests(unittest.TestCase):
             client.complete_json([])
 
         self.assertNotIn("secret-ark-key", str(caught.exception))
+
+    def test_counts_a_forwarded_call_even_when_provider_raises(self):
+        inner = FailingClient()
+        client = BudgetedLLMClient(inner, max_calls=1, max_tokens=200_000)
+
+        with self.assertRaises(TimeoutError):
+            client.complete_json([])
+
+        self.assertEqual(client.snapshot().calls, 1)
+        with self.assertRaises(LLMCallBudgetExceeded):
+            client.complete_json([])
+        self.assertEqual(inner.calls, 1)
 
 
 if __name__ == "__main__":
