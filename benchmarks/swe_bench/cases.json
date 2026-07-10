@@ -1,0 +1,10 @@
+{
+  "dataset_name": "SWE-bench/SWE-bench_Lite",
+  "split": "test",
+  "instance_id": "sympy__sympy-20590",
+  "selection_reason": "Official SWE-bench quickstart instance with a small Python patch and a documented gold validation command.",
+  "provider": "ark",
+  "max_calls": 12,
+  "max_tokens": 200000,
+  "timeout_seconds": 1800
+}
