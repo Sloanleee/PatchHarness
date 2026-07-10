@@ -1,0 +1,381 @@
+from __future__ import annotations
+
+import importlib.util
+import json
+import os
+import shutil
+import subprocess
+import sys
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Callable, Mapping
+
+from dotenv import load_dotenv
+
+from benchmarks.swe_bench.models import (
+    SingleCaseConfig,
+    WorkerResult,
+    load_case,
+)
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
+
+class PreflightError(RuntimeError):
+    """Raised when the experiment cannot safely start."""
+
+
+def preflight(
+    project_root: Path,
+    run_command: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
+    environ: Mapping[str, str] | None = None,
+    find_spec: Callable[[str], Any] = importlib.util.find_spec,
+    disk_usage: Callable[[Path], Any] = shutil.disk_usage,
+) -> dict[str, Any]:
+    root = project_root.resolve()
+    actual_prefix = Path(sys.prefix).resolve()
+    allowed_prefixes = {(root / ".venv").resolve(), (root / "venv311").resolve()}
+    if actual_prefix not in allowed_prefixes:
+        raise PreflightError(
+            f"SWE-bench must run in a managed virtual environment: {actual_prefix}"
+        )
+    if find_spec("swebench") is None:
+        raise PreflightError("swebench is not installed in the active environment")
+
+    git_result = _run_probe(run_command, ["git", "--version"])
+    if git_result.returncode != 0:
+        raise PreflightError(f"Git is unavailable: {git_result.stderr.strip()}")
+    docker_result = _run_probe(run_command, ["docker", "info"])
+    if docker_result.returncode != 0:
+        raise PreflightError(
+            f"Docker daemon is unavailable: {docker_result.stderr.strip()}"
+        )
+
+    free_bytes = int(disk_usage(root).free)
+    required_bytes = 120 * 1024**3
+    if free_bytes < required_bytes:
+        raise PreflightError(
+            f"SWE-bench requires at least 120 GiB free; found {free_bytes / 1024**3:.1f} GiB"
+        )
+
+    if environ is None:
+        load_dotenv(root / ".env", override=False)
+        environ = os.environ
+    missing = [name for name in ("ARK_API_KEY", "ARK_MODEL") if not environ.get(name)]
+    if missing:
+        raise PreflightError(f"Missing Ark configuration: {', '.join(missing)}")
+
+    docker_version = _run_probe(
+        run_command,
+        ["docker", "version", "--format", "{{.Server.Version}} {{.Server.Os}} {{.Server.Arch}}"],
+    )
+    return {
+        "interpreter": sys.executable,
+        "python_version": sys.version.split()[0],
+        "git_version": git_result.stdout.strip(),
+        "docker_version": docker_version.stdout.strip(),
+        "free_bytes": free_bytes,
+    }
+
+
+def run_harness(
+    config: SingleCaseConfig,
+    predictions: str | Path,
+    phase_dir: Path,
+    harness_run_id: str,
+    run_command: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
+) -> bool:
+    phase_dir.mkdir(parents=True, exist_ok=True)
+    command = [
+        sys.executable,
+        "-m",
+        "swebench.harness.run_evaluation",
+        "--dataset_name",
+        config.dataset_name,
+        "--split",
+        config.split,
+        "--predictions_path",
+        str(predictions),
+        "--instance_ids",
+        config.instance_id,
+        "--max_workers",
+        "1",
+        "--timeout",
+        str(config.timeout_seconds),
+        "--run_id",
+        harness_run_id,
+        "--cache_level",
+        "env",
+    ]
+    completed = run_command(
+        command,
+        cwd=phase_dir,
+        capture_output=True,
+        text=True,
+        timeout=config.timeout_seconds + 600,
+        check=False,
+    )
+    (phase_dir / "harness.log").write_text(
+        f"STDOUT\n{completed.stdout}\nSTDERR\n{completed.stderr}",
+        encoding="utf-8",
+    )
+    if completed.returncode != 0:
+        raise RuntimeError(
+            f"SWE-bench Harness exited {completed.returncode}: {completed.stderr[-1000:]}"
+        )
+    return _parse_harness_report(phase_dir, config.instance_id)
+
+
+def run_worker_process(
+    config_path: Path,
+    workspace: Path,
+    result_path: Path,
+    log_path: Path,
+    timeout_seconds: int,
+    run_command: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
+) -> WorkerResult:
+    command = [
+        sys.executable,
+        "-m",
+        "benchmarks.swe_bench.worker",
+        "--config",
+        str(config_path),
+        "--workspace",
+        str(workspace),
+        "--result",
+        str(result_path),
+    ]
+    completed = run_command(
+        command,
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+        text=True,
+        timeout=timeout_seconds,
+        check=False,
+    )
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    log_path.write_text(
+        f"STDOUT\n{completed.stdout}\nSTDERR\n{completed.stderr}",
+        encoding="utf-8",
+    )
+    if completed.returncode != 0:
+        raise RuntimeError(
+            f"PatchHarness worker exited {completed.returncode}: {completed.stderr[-1000:]}"
+        )
+    if not result_path.exists():
+        raise RuntimeError("PatchHarness worker did not write its result file")
+    return WorkerResult.from_dict(json.loads(result_path.read_text(encoding="utf-8")))
+
+
+def run_single(
+    config_path: Path,
+    results_root: Path,
+    run_id: str | None = None,
+    preflight_fn: Callable[[Path], dict[str, Any]] = preflight,
+    harness_runner: Callable[[SingleCaseConfig, str | Path, Path, str], bool] = run_harness,
+    worker_runner: Callable[..., WorkerResult] = run_worker_process,
+) -> Path:
+    config = load_case(config_path)
+    run_id = run_id or datetime.now().strftime("%Y%m%d_%H%M%S")
+    run_dir = results_root / run_id
+    gold_dir = run_dir / "gold" / "evaluation"
+    model_dir = run_dir / "model"
+    model_evaluation_dir = model_dir / "evaluation"
+    run_dir.mkdir(parents=True, exist_ok=True)
+    model_dir.mkdir(parents=True, exist_ok=True)
+    _write_json(run_dir / "config.json", config.__dict__ if hasattr(config, "__dict__") else {
+        "dataset_name": config.dataset_name,
+        "split": config.split,
+        "instance_id": config.instance_id,
+        "selection_reason": config.selection_reason,
+        "provider": config.provider,
+        "max_calls": config.max_calls,
+        "max_tokens": config.max_tokens,
+        "timeout_seconds": config.timeout_seconds,
+    })
+
+    metrics: dict[str, Any] = {
+        "run_id": run_id,
+        "instance_id": config.instance_id,
+        "provider": config.provider,
+        "stage": "preflight",
+        "gold_resolved": None,
+        "model_resolved": None,
+        "llm_calls": 0,
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "total_tokens": 0,
+        "elapsed_seconds": 0.0,
+        "patch_generated": False,
+        "failed_stage": "",
+        "failure_category": "",
+        "error_summary": "",
+    }
+
+    try:
+        metrics["preflight"] = preflight_fn(PROJECT_ROOT)
+    except Exception as exc:
+        _fail(metrics, "preflight", "preflight_error", exc)
+        _write_evidence(run_dir, metrics)
+        return run_dir
+
+    metrics["stage"] = "gold_evaluated"
+    try:
+        metrics["gold_resolved"] = harness_runner(
+            config,
+            "gold",
+            gold_dir,
+            f"{run_id}_gold",
+        )
+    except Exception as exc:
+        _fail(metrics, "gold_evaluated", "harness_error", exc)
+        _write_evidence(run_dir, metrics)
+        return run_dir
+    if not metrics["gold_resolved"]:
+        _fail(
+            metrics,
+            "gold_evaluated",
+            "gold_evaluation_failed",
+            RuntimeError("Official gold patch did not resolve the selected instance"),
+        )
+        _write_evidence(run_dir, metrics)
+        return run_dir
+
+    worker_result_path = model_dir / "worker_result.json"
+    worker_log_path = model_dir / "worker.log"
+    metrics["stage"] = "model_executed"
+    try:
+        worker = worker_runner(
+            config_path,
+            run_dir / "workspace",
+            worker_result_path,
+            worker_log_path,
+            config.timeout_seconds,
+        )
+    except subprocess.TimeoutExpired as exc:
+        worker_log_path.write_text(
+            _stream_text(exc.output) + _stream_text(exc.stderr),
+            encoding="utf-8",
+        )
+        _fail(metrics, "model_executed", "run_timeout", exc)
+        _write_evidence(run_dir, metrics)
+        return run_dir
+    except Exception as exc:
+        _fail(metrics, "model_executed", "repository_setup_error", exc)
+        _write_evidence(run_dir, metrics)
+        return run_dir
+
+    metrics.update(
+        {
+            "llm_calls": worker.llm_calls,
+            "prompt_tokens": worker.prompt_tokens,
+            "completion_tokens": worker.completion_tokens,
+            "total_tokens": worker.prompt_tokens + worker.completion_tokens,
+            "elapsed_seconds": worker.elapsed_seconds,
+            "patch_generated": bool(worker.patch),
+            "failure_category": worker.failure_category,
+            "error_summary": _redact(worker.error_summary),
+        }
+    )
+    patch_path = model_dir / "model.patch"
+    patch_path.write_text(worker.patch, encoding="utf-8")
+    prediction_path = model_dir / "predictions.jsonl"
+    prediction = {
+        "instance_id": config.instance_id,
+        "model_name_or_path": "PatchHarness-Ark",
+        "model_patch": worker.patch,
+    }
+    prediction_path.write_text(
+        json.dumps(prediction, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    metrics["stage"] = "prediction_written"
+
+    try:
+        metrics["model_resolved"] = harness_runner(
+            config,
+            prediction_path,
+            model_evaluation_dir,
+            f"{run_id}_model",
+        )
+    except Exception as exc:
+        _fail(metrics, "model_evaluated", "harness_error", exc)
+        _write_evidence(run_dir, metrics)
+        return run_dir
+
+    metrics["stage"] = "completed"
+    _write_evidence(run_dir, metrics)
+    return run_dir
+
+
+def _run_probe(run_command: Callable[..., Any], command: list[str]):
+    return run_command(
+        command,
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+
+
+def _parse_harness_report(phase_dir: Path, instance_id: str) -> bool:
+    matches = []
+    for path in phase_dir.glob("logs/run_evaluation/**/report.json"):
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        if instance_id in payload:
+            matches.append(payload[instance_id])
+    if len(matches) != 1 or "resolved" not in matches[0]:
+        raise RuntimeError(
+            f"Expected one Harness report for {instance_id}, found {len(matches)}"
+        )
+    return bool(matches[0]["resolved"])
+
+
+def _fail(metrics: dict[str, Any], stage: str, category: str, exc: Exception) -> None:
+    metrics["stage"] = stage
+    metrics["failed_stage"] = stage
+    metrics["failure_category"] = category
+    metrics["error_summary"] = _redact(str(exc))
+
+
+def _redact(text: str) -> str:
+    secret = os.getenv("ARK_API_KEY", "")
+    return text.replace(secret, "[REDACTED]") if secret else text
+
+
+def _stream_text(value: Any) -> str:
+    if value is None:
+        return ""
+    return value.decode("utf-8", errors="replace") if isinstance(value, bytes) else str(value)
+
+
+def _write_json(path: Path, data: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(data, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+
+def _write_evidence(run_dir: Path, metrics: dict[str, Any]) -> None:
+    _write_json(run_dir / "metrics.json", metrics)
+    summary = "\n".join(
+        [
+            "# SWE-bench Single-Instance Feasibility Test",
+            "",
+            f"- Run ID: `{metrics['run_id']}`",
+            f"- Instance: `{metrics['instance_id']}`",
+            f"- Stage: `{metrics['stage']}`",
+            f"- Gold resolved: `{metrics['gold_resolved']}`",
+            f"- Model resolved: `{metrics['model_resolved']}`",
+            f"- LLM calls: `{metrics['llm_calls']}`",
+            f"- Total tokens: `{metrics['total_tokens']}`",
+            f"- Patch generated: `{metrics['patch_generated']}`",
+            f"- Failure category: `{metrics['failure_category']}`",
+            f"- Error: `{metrics['error_summary']}`",
+            "",
+            "This is a single-instance feasibility result, not an aggregate SWE-bench success rate.",
+        ]
+    )
+    (run_dir / "summary.md").write_text(summary + "\n", encoding="utf-8")
