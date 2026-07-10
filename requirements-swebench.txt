@@ -1,0 +1,3 @@
+# Host-side SWE-bench adapter and official Docker evaluation harness.
+# Install only for the manual single-instance experiment.
+swebench==4.1.0

@@ -4,6 +4,7 @@
 .env
 !demo/hitl_project/.env
 .venv/
+venv311/
 __pycache__/
 .pytest_cache/
 README1.md
