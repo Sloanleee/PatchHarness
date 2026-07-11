@@ -62,7 +62,7 @@ class VolcengineArkClient:
         api_key: str | None = None,
         model: str | None = None,
         base_url: str | None = None,
-        timeout: float = 30.0,
+        timeout: float | None = None,
         http_client: Any | None = None,
     ) -> None:
         self.api_key = api_key or os.getenv("ARK_API_KEY")
@@ -75,7 +75,9 @@ class VolcengineArkClient:
             raise RuntimeError("ARK_API_KEY is required to use VolcengineArkClient")
         if not self.model:
             raise RuntimeError("ARK_MODEL is required to use VolcengineArkClient")
-        self.timeout = timeout
+        self.timeout = _validate_ark_timeout(
+            os.getenv("ARK_TIMEOUT_SECONDS", "300") if timeout is None else timeout
+        )
         if http_client is None:
             try:
                 import httpx
@@ -161,6 +163,16 @@ def _responses_url(base_url: str) -> str:
     if normalized.endswith("/responses"):
         return normalized
     return f"{normalized}/responses"
+
+
+def _validate_ark_timeout(value: Any) -> float:
+    try:
+        timeout = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("ARK_TIMEOUT_SECONDS must be a number between 10 and 300") from exc
+    if not 10 <= timeout <= 300:
+        raise ValueError("ARK_TIMEOUT_SECONDS must be between 10 and 300")
+    return timeout
 
 
 def _ark_error_from_response(response: Any, api_key: str) -> ArkAPIError:

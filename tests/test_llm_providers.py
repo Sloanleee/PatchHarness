@@ -9,6 +9,28 @@ from app.llm.deepseek_client import DeepSeekClient
 
 
 class LLMProviderTests(unittest.TestCase):
+    def test_volcengine_timeout_defaults_to_three_hundred_seconds(self):
+        with patch.dict(os.environ, {}, clear=True):
+            client = VolcengineArkClient(api_key="key", model="model", http_client=object())
+        self.assertEqual(client.timeout, 300.0)
+
+    def test_volcengine_timeout_reads_environment(self):
+        with patch.dict(os.environ, {"ARK_TIMEOUT_SECONDS": "180"}, clear=True):
+            client = VolcengineArkClient(api_key="key", model="model", http_client=object())
+        self.assertEqual(client.timeout, 180.0)
+
+    def test_volcengine_explicit_timeout_overrides_environment(self):
+        with patch.dict(os.environ, {"ARK_TIMEOUT_SECONDS": "180"}, clear=True):
+            client = VolcengineArkClient(api_key="key", model="model", timeout=240, http_client=object())
+        self.assertEqual(client.timeout, 240.0)
+
+    def test_volcengine_timeout_rejects_invalid_environment(self):
+        for value in ("invalid", "9", "301"):
+            with self.subTest(value=value), patch.dict(
+                os.environ, {"ARK_TIMEOUT_SECONDS": value}, clear=True
+            ):
+                with self.assertRaisesRegex(ValueError, "ARK_TIMEOUT_SECONDS"):
+                    VolcengineArkClient(api_key="key", model="model", http_client=object())
     def test_factory_can_create_mock_provider(self):
         with patch.dict(os.environ, {"PATCHHARNESS_LLM_PROVIDER": "mock"}, clear=False):
             client = create_llm_client()
