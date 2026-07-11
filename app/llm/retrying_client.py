@@ -70,6 +70,29 @@ class RetryingLLMClient:
                 self.sleeper(delay)
                 retry_index += 1
                 continue
+            except Exception as exc:
+                self._record_attempt(0)
+                text = f"{type(exc).__name__} {exc}".lower()
+                if isinstance(exc, TimeoutError) or "timeout" in text or "timed out" in text:
+                    code = "network_timeout"
+                elif isinstance(exc, ConnectionError) or "connection" in text:
+                    code = "network_connection"
+                else:
+                    code = "provider_error"
+                snapshot = self.snapshot()
+                self.event_sink({
+                    "event": "ark_request_failed",
+                    "attempt": snapshot.attempts,
+                    "error_code": code,
+                    "error_type": type(exc).__name__,
+                    "retryable": False,
+                    "next_delay_seconds": None,
+                    "client_observed_rpm": snapshot.client_observed_rpm,
+                    "client_observed_tpm": snapshot.client_observed_tpm,
+                    "configured_rpm_limit": self.rpm_limit,
+                    "configured_tpm_limit": self.tpm_limit,
+                })
+                raise
 
             tokens = response.prompt_tokens + response.completion_tokens
             self._record_attempt(tokens)

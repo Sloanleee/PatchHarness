@@ -261,6 +261,7 @@ class SweBenchRunnerTests(unittest.TestCase):
             client_factory=lambda provider: RateLimitedClient(),
             workflow_builder=lambda client: FakeWorkflow(client),
             patch_collector=lambda workspace: "",
+            event_sink=lambda event: None,
         )
 
         self.assertEqual(result.llm_calls, 1)

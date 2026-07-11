@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+from collections import deque
 from pathlib import Path
 
 from app.graph import BugfixWorkflow
@@ -116,6 +117,44 @@ class StageFourToNineTests(unittest.TestCase):
             patch_prompt = llm.batches[6][1]["content"]
             self.assertIn("candidate_locations", patch_prompt)
             self.assertNotIn("SECRET_FULL_CONTENT", patch_prompt)
+
+    def test_partial_root_cause_continues_when_llm_compression_falls_back(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            (workspace / "target.py").write_text(
+                "value = 1\n" + "\n".join("x = '" + ("a" * 100) + "'" for _ in range(450)),
+                encoding="utf-8",
+            )
+
+            class OutcomeClient:
+                def __init__(self):
+                    self.outcomes = deque([
+                        LLMAction("read source", "read_file", {"path": "target.py"}),
+                        *[LLMAction("investigate", "grep_search", {"query": "value = 1"}) for _ in range(5)],
+                        TimeoutError("compression timeout one"),
+                        TimeoutError("compression timeout two"),
+                        LLMAction("patch", "edit_file", {"path": "target.py", "old": "value = 1", "new": "value = 2"}),
+                        LLMAction("done", final="patched"),
+                    ])
+                def complete_json(self, messages, **kwargs):
+                    outcome = self.outcomes.popleft()
+                    if isinstance(outcome, Exception):
+                        raise outcome
+                    return MockLLMClient([outcome]).complete_json(messages, **kwargs)
+
+            workflow = BugfixWorkflow.from_default_configs()
+            workflow.llm_client = OutcomeClient()
+            result = workflow.run(BugfixRequest(
+                task_description="Fix target value", workspace_path=str(workspace), mode="fix",
+                allow_edit=True, run_tests=False, enable_llm=True,
+            ))
+
+            self.assertEqual(result.agent_reports[0].status, "partial")
+            self.assertEqual(result.changed_files, ["target.py"])
+            self.assertTrue(any(
+                event["event"] == "compression_fallback"
+                for event in result.agent_reports[0].compression_events
+            ))
     def test_read_file_can_return_a_bounded_line_range(self):
         with tempfile.TemporaryDirectory() as tmp:
             workspace = Path(tmp)

@@ -37,6 +37,29 @@ class SequenceClient:
 
 
 class RetryingLLMClientTests(unittest.TestCase):
+    def test_network_timeout_counts_attempt_and_logs_without_secret(self):
+        events = []
+        client = RetryingLLMClient(
+            SequenceClient([TimeoutError("secret-request-body")]),
+            event_sink=events.append,
+        )
+
+        with self.assertRaises(TimeoutError):
+            client.complete_json([{"role": "user", "content": "api-key-secret"}])
+
+        self.assertEqual(client.snapshot().attempts, 1)
+        self.assertEqual(events[0]["error_code"], "network_timeout")
+        self.assertNotIn("secret", str(events[0]))
+
+    def test_connection_error_counts_attempt_without_retry(self):
+        inner = SequenceClient([ConnectionError("reset")])
+        client = RetryingLLMClient(inner, event_sink=lambda event: None)
+
+        with self.assertRaises(ConnectionError):
+            client.complete_json([])
+
+        self.assertEqual(inner.calls, 1)
+        self.assertEqual(client.snapshot().attempts, 1)
     def test_retries_transient_429_with_bounded_exponential_delays(self):
         inner = SequenceClient(
             [

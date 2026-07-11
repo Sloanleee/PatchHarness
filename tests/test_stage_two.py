@@ -6,9 +6,57 @@ from app.context import ContextCompressor, ContextManager
 from app.graph import BugfixWorkflow
 from app.schemas import AgentReport, BugfixRequest
 from app.skills import SkillManager
+from app.llm import LLMResponse
+
+
+class CompressionClient:
+    def __init__(self, outcomes):
+        self.outcomes = iter(outcomes)
+        self.calls = 0
+    def complete_json(self, messages, **kwargs):
+        self.calls += 1
+        outcome = next(self.outcomes)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
 
 
 class StageTwoTests(unittest.TestCase):
+    def test_compressor_retries_network_timeout_once_then_succeeds(self):
+        client = CompressionClient([TimeoutError("read timed out"), LLMResponse('{"summary":"short"}')])
+        sleeps = []
+        compressor = ContextCompressor(llm_client=client, sleeper=sleeps.append)
+
+        result = compressor._summarize("x" * 1000)
+
+        self.assertIn("short", result)
+        self.assertEqual(client.calls, 2)
+        self.assertEqual(sleeps, [2.0])
+
+    def test_compressor_falls_back_locally_after_two_network_failures(self):
+        client = CompressionClient([TimeoutError("secret payload"), ConnectionError("reset")])
+        report = AgentReport("root_cause_analysis", "partial", observations=[
+            {"tool": "read_file", "ok": True, "data": {"content": "A" * 500 + "Z" * 500}, "error": None},
+            {"tool": "grep_search", "ok": True, "data": {"matches": []}, "error": None},
+        ])
+        compressor = ContextCompressor(max_tokens=10, threshold=0.5, keep_recent=1, llm_client=client, sleeper=lambda _: None)
+
+        self.assertTrue(compressor.maybe_compress_report(report))
+
+        content = report.observations[0]["data"]["content"]
+        self.assertIn("compression fallback", content)
+        self.assertTrue(any(e["event"] == "compression_fallback" for e in report.compression_events))
+
+    def test_compressor_does_not_retry_non_network_error(self):
+        client = CompressionClient([ValueError("bad request")])
+        sleeps = []
+        compressor = ContextCompressor(llm_client=client, sleeper=sleeps.append)
+
+        result = compressor._summarize("x" * 1000)
+
+        self.assertIn("compression fallback", result)
+        self.assertEqual(client.calls, 1)
+        self.assertEqual(sleeps, [])
     def test_context_isolation_hides_hidden_items_and_merges_reports(self):
         request = BugfixRequest(task_description="审查项目")
         manager = ContextManager.from_request(request, ["code_review"])
