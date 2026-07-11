@@ -17,12 +17,87 @@ class TimeoutLLMClient:
 
 
 class StageFourToNineTests(unittest.TestCase):
+    def test_read_file_can_return_a_bounded_line_range(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            (workspace / "large.py").write_text(
+                "".join(f"line {number}\n" for number in range(1, 21)),
+                encoding="utf-8",
+            )
+            client = MCPClient(MCPServer(create_default_tools()))
+
+            result = client.run(
+                "read_file", workspace, path="large.py", start_line=5, end_line=7
+            )
+
+            self.assertTrue(result.ok)
+            self.assertEqual(result.data["content"], "line 5\nline 6\nline 7\n")
+            self.assertEqual(result.data["start_line"], 5)
+            self.assertEqual(result.data["end_line"], 7)
+            self.assertEqual(result.data["total_lines"], 20)
+
+    def test_patch_generation_receives_root_cause_summary_and_edits(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            (workspace / "calc.py").write_text(
+                "def add(a, b):\n    return a - b\n", encoding="utf-8"
+            )
+
+            class RecordingLLM(MockLLMClient):
+                def __init__(self):
+                    super().__init__(
+                        [
+                            LLMAction(
+                                "diagnosed",
+                                final="Root cause: calc.py returns subtraction instead of addition.",
+                            ),
+                            LLMAction(
+                                "apply diagnosis",
+                                "edit_file",
+                                {
+                                    "path": "calc.py",
+                                    "old": "return a - b",
+                                    "new": "return a + b",
+                                },
+                            ),
+                            LLMAction("done", final="Patch applied."),
+                        ]
+                    )
+                    self.message_batches = []
+
+                def complete_json(self, messages, **kwargs):
+                    self.message_batches.append(messages)
+                    return super().complete_json(messages, **kwargs)
+
+            llm = RecordingLLM()
+            workflow = BugfixWorkflow.from_default_configs()
+            workflow.llm_client = llm
+
+            result = workflow.run(
+                BugfixRequest(
+                    task_description="Fix add so it performs addition.",
+                    workspace_path=str(workspace),
+                    mode="fix",
+                    allow_edit=True,
+                    run_tests=False,
+                    enable_llm=True,
+                )
+            )
+
+            self.assertEqual(result.changed_files, ["calc.py"])
+            patch_prompt = llm.message_batches[1][1]["content"]
+            self.assertIn("Root cause: calc.py returns subtraction", patch_prompt)
+
     def test_llm_react_can_drive_tool_actions(self):
         with tempfile.TemporaryDirectory() as tmp:
             workspace = Path(tmp)
             (workspace / "calc.py").write_text("def add(a, b):\n    return a - b\n", encoding="utf-8")
             llm = MockLLMClient(
                 [
+                    LLMAction(
+                        "diagnosed",
+                        final="Root cause: calc.py subtracts instead of adding.",
+                    ),
                     LLMAction("read target", "read_file", {"path": "calc.py"}),
                     LLMAction(
                         "apply minimal patch",
@@ -54,9 +129,10 @@ class StageFourToNineTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             workspace = Path(tmp)
             (workspace / "calc.py").write_text("def add(a, b):\n    return a - b\n", encoding="utf-8")
-            llm = MockLLMClient(
-                [{"thought": "bad shape", "action": "read_file", "action_input": "calc.py"}]
-            )
+            llm = MockLLMClient([
+                LLMAction("diagnosed", final="Root cause is in calc.py."),
+                {"thought": "bad shape", "action": "read_file", "action_input": "calc.py"},
+            ])
 
             workflow = BugfixWorkflow.from_default_configs()
             workflow.llm_client = llm
@@ -122,13 +198,11 @@ class StageFourToNineTests(unittest.TestCase):
                 )
             )
 
-            self.assertEqual(len(result.agent_reports), 2)
+            self.assertEqual(len(result.agent_reports), 1)
             self.assertEqual(result.agent_reports[0].agent_name, "root_cause_analysis")
-            self.assertEqual(result.agent_reports[0].status, "completed")
-            self.assertEqual(result.agent_reports[1].agent_name, "patch_generation")
-            self.assertEqual(result.agent_reports[1].status, "failed")
-            self.assertIn("LLM request timed out", result.agent_reports[1].summary)
-            self.assertEqual(result.metrics.agent_calls, 2)
+            self.assertEqual(result.agent_reports[0].status, "failed")
+            self.assertIn("LLM request timed out", result.agent_reports[0].summary)
+            self.assertEqual(result.metrics.agent_calls, 1)
             self.assertEqual(result.metrics.llm_timeouts, 1)
 
     def test_llm_fallback_planner_can_trigger_planning_hitl(self):

@@ -14,6 +14,29 @@ from app.skills import SkillManager
 from app.tools.base import ToolRegistry
 
 
+def _compact_prior_reports(reports: list[AgentReport], max_chars: int = 6000) -> str:
+    sections: list[str] = []
+    for item in reports:
+        observations: list[str] = []
+        for observation in item.observations[-4:]:
+            data = observation.get("data") or {}
+            if isinstance(data, dict):
+                path = data.get("path")
+                matches = data.get("matches")
+                if path:
+                    observations.append(f"read: {path}")
+                if isinstance(matches, list):
+                    for match in matches[:5]:
+                        observations.append(
+                            f"match: {match.get('path')}:{match.get('line')} {match.get('text', '')}"
+                        )
+        section = f"[{item.agent_name}] {item.summary}"
+        if observations:
+            section += "\n" + "\n".join(observations)
+        sections.append(section)
+    return "\n".join(sections)[:max_chars]
+
+
 class BaseAgent:
     def __init__(
         self,
@@ -45,7 +68,7 @@ class BaseAgent:
         elif self.config.name == "root_cause_analysis":
             report = self._run_root_cause_analysis(request, workspace)
         elif self.config.name == "patch_generation":
-            report = self._run_patch_generation(request, workspace)
+            report = self._run_patch_generation(request, workspace, prior_reports)
         elif self.config.name == "bug_fix":
             report = self._run_bug_fix(request, workspace)
         elif self.config.name == "test_verify":
@@ -83,6 +106,9 @@ class BaseAgent:
             )
             return report
 
+        if self.llm_client is not None:
+            return self._run_llm_react(request, workspace, report)
+
         query = _best_query(request.task_description)
         self._record_thought(report, f"Searching for likely root cause with query: {query}")
         result = self._run_tool(report, workspace, "grep_search", query=query, max_results=10)
@@ -96,8 +122,13 @@ class BaseAgent:
             report.summary = "No clear root-cause location found from deterministic search."
         return report
 
-    def _run_patch_generation(self, request: BugfixRequest, workspace: Path) -> AgentReport:
-        return self._run_bug_fix(request, workspace)
+    def _run_patch_generation(
+        self,
+        request: BugfixRequest,
+        workspace: Path,
+        prior_reports: list[AgentReport],
+    ) -> AgentReport:
+        return self._run_bug_fix(request, workspace, prior_reports)
 
     def _run_code_review(self, request: BugfixRequest, workspace: Path) -> AgentReport:
         report = AgentReport(self.config.name, "completed")
@@ -116,14 +147,19 @@ class BaseAgent:
             report.summary = "未找到明显相关代码，建议补充更具体的报错、函数名或文件路径。"
         return report
 
-    def _run_bug_fix(self, request: BugfixRequest, workspace: Path) -> AgentReport:
+    def _run_bug_fix(
+        self,
+        request: BugfixRequest,
+        workspace: Path,
+        prior_reports: list[AgentReport] | None = None,
+    ) -> AgentReport:
         report = AgentReport(self.config.name, "completed")
         self._prepare_skills(report)
         edit_plan = _parse_edit_plan(request.task_description)
 
         if edit_plan is None:
             if self.llm_client is not None:
-                return self._run_llm_react(request, workspace, report)
+                return self._run_llm_react(request, workspace, report, prior_reports or [])
             query = _best_query(request.task_description)
             self._record_thought(report, f"未识别到明确替换指令，先搜索关键词：{query}")
             result = self._run_tool(report, workspace, "grep_search", query=query, max_results=10)
@@ -166,8 +202,17 @@ class BaseAgent:
         request: BugfixRequest,
         workspace: Path,
         report: AgentReport,
+        prior_reports: list[AgentReport] | None = None,
     ) -> AgentReport:
         self._record_thought(report, "未识别到明确替换指令，进入 LLM ReAct 决策。")
+        prior_reports = prior_reports or []
+        diagnosis = _compact_prior_reports(prior_reports)
+        task_content = request.task_description
+        if diagnosis:
+            task_content += (
+                "\n\nPrior diagnostic evidence (use this before searching again):\n"
+                + diagnosis
+            )
         messages = [
             {
                 "role": "system",
@@ -177,13 +222,20 @@ class BaseAgent:
                     "{\"thought\": string, \"action\": string|null, "
                     "\"action_input\": object, \"final\": string|null}. "
                     "Never return boolean final. Never return string/list action_input. "
-                    "When calling read_file use {\"path\": \"...\"}. "
+                    "When calling read_file use a narrow range: "
+                    "{\"path\": \"...\", \"start_line\": 1, \"end_line\": 200}. "
                     "When calling edit_file use {\"path\": \"...\", \"old\": \"...\", \"new\": \"...\"}. "
                     f"Allowed actions: {', '.join(self.config.tools)}. "
-                    "Use final only after the necessary tool actions are complete."
+                    "Use final only after the necessary tool actions are complete. "
+                    + (
+                        "Investigate only; do not edit. Final must name the likely file, "
+                        "symbol, and concrete root cause."
+                        if self.config.name == "root_cause_analysis"
+                        else "Prioritize reaching edit_file; do not repeat completed diagnosis."
+                    )
                 ),
             },
-            {"role": "user", "content": request.task_description},
+            {"role": "user", "content": task_content},
         ]
         for _ in range(self.config.max_iterations):
             try:

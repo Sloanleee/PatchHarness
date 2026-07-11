@@ -55,7 +55,11 @@ class ReadFileTool(BaseTool):
     description = "Read a UTF-8 text file from the workspace."
     input_schema = {
         "type": "object",
-        "properties": {"path": {"type": "string"}},
+        "properties": {
+            "path": {"type": "string"},
+            "start_line": {"type": "integer", "minimum": 1},
+            "end_line": {"type": "integer", "minimum": 1},
+        },
         "required": ["path"],
     }
 
@@ -70,7 +74,30 @@ class ReadFileTool(BaseTool):
             return ToolResult(self.name, False, error=str(exc))
         except ValueError as exc:
             return ToolResult(self.name, False, error=str(exc))
-        return ToolResult(self.name, True, {"path": relative_path, "content": text})
+        lines = text.splitlines(keepends=True)
+        total_lines = len(lines)
+        start_line = int(kwargs.get("start_line", 1))
+        end_line = int(kwargs.get("end_line", min(total_lines, start_line + 399)))
+        if start_line < 1 or end_line < start_line:
+            return ToolResult(
+                self.name,
+                False,
+                error="start_line must be >= 1 and end_line must be >= start_line",
+            )
+        selected_end = min(end_line, total_lines)
+        content = "".join(lines[start_line - 1:selected_end])
+        return ToolResult(
+            self.name,
+            True,
+            {
+                "path": relative_path,
+                "content": content,
+                "start_line": start_line,
+                "end_line": selected_end,
+                "total_lines": total_lines,
+                "truncated": selected_end < total_lines,
+            },
+        )
 
 
 class EditFileTool(BaseTool):

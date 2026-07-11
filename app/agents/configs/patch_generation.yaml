@@ -12,7 +12,7 @@ tools:
   - download_skill
   - create_skill
   - update_skill
-max_iterations: 6
+max_iterations: 8
 temperature: 0.2
 output_schema:
   type: patch_generation_report

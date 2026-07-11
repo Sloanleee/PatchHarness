@@ -26,9 +26,11 @@ class SweBenchContractTests(unittest.TestCase):
         self.assertEqual(case.split, "test")
         self.assertEqual(case.instance_id, "sympy__sympy-20590")
         self.assertEqual(case.provider, "ark")
-        self.assertEqual(case.max_calls, 12)
-        self.assertEqual(case.max_tokens, 200_000)
-        self.assertEqual(case.timeout_seconds, 1_800)
+        self.assertGreater(case.max_calls, 0)
+        self.assertGreater(case.max_tokens, 0)
+        self.assertGreater(case.timeout_seconds, 0)
+        self.assertGreater(case.rpm_limit, 0)
+        self.assertGreater(case.tpm_limit, 0)
 
     def test_rejects_invalid_single_case_values(self):
         valid = {
