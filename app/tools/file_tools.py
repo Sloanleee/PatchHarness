@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import subprocess
+import re
 from pathlib import Path
+from pathlib import PurePosixPath
 from typing import Any
 
 from app.schemas import ToolResult
@@ -15,20 +17,37 @@ class GrepSearchTool(BaseTool):
         "type": "object",
         "properties": {
             "query": {"type": "string"},
+            "pattern": {"type": "string"},
+            "glob": {"type": "string"},
+            "regex": {"type": "boolean", "default": False},
             "max_results": {"type": "integer", "default": 20},
         },
-        "required": ["query"],
     }
 
     def run(self, workspace: Path, **kwargs: Any) -> ToolResult:
         query = str(kwargs.get("query", "")).strip()
+        pattern = str(kwargs.get("pattern", "")).strip()
+        query = query or pattern
+        glob_pattern = str(kwargs.get("glob", "")).strip() or None
+        regex_enabled = bool(kwargs.get("regex", False))
         max_results = int(kwargs.get("max_results", 20))
         if not query:
-            return ToolResult(self.name, False, error="query is required")
+            return ToolResult(self.name, False, error="search query is required")
+        if max_results <= 0:
+            return ToolResult(self.name, False, error="max_results must be positive")
+        compiled = None
+        if regex_enabled:
+            try:
+                compiled = re.compile(query, re.IGNORECASE)
+            except re.error as exc:
+                return ToolResult(self.name, False, error=f"invalid regex: {exc}")
 
         matches: list[dict[str, Any]] = []
         for path in workspace.rglob("*"):
             if not path.is_file() or _skip_path(path):
+                continue
+            relative = path.relative_to(workspace).as_posix()
+            if glob_pattern and not PurePosixPath(relative).match(glob_pattern):
                 continue
             try:
                 text = path.read_text(encoding="utf-8")
@@ -37,17 +56,18 @@ class GrepSearchTool(BaseTool):
             except OSError as exc:
                 return ToolResult(self.name, False, error=str(exc))
             for line_no, line in enumerate(text.splitlines(), start=1):
-                if query.lower() in line.lower():
+                matched = bool(compiled.search(line)) if compiled else query.lower() in line.lower()
+                if matched:
                     matches.append(
                         {
-                            "path": str(path.relative_to(workspace)),
+                            "path": relative,
                             "line": line_no,
                             "text": line.strip(),
                         }
                     )
                     if len(matches) >= max_results:
-                        return ToolResult(self.name, True, {"matches": matches})
-        return ToolResult(self.name, True, {"matches": matches})
+                        return ToolResult(self.name, True, {"matches": matches, "search": {"query": query, "glob": glob_pattern, "regex": regex_enabled}})
+        return ToolResult(self.name, True, {"matches": matches, "search": {"query": query, "glob": glob_pattern, "regex": regex_enabled}})
 
 
 class ReadFileTool(BaseTool):

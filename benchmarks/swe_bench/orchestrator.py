@@ -233,6 +233,9 @@ def run_single(
         "configured_rpm_limit": config.rpm_limit,
         "configured_tpm_limit": config.tpm_limit,
         "rate_limit_headers": {},
+        "root_cause_status": "",
+        "root_cause_evidence_count": 0,
+        "root_cause_stop_reason": "",
         "elapsed_seconds": 0.0,
         "patch_generated": False,
         "failed_stage": "",
@@ -317,6 +320,9 @@ def run_single(
             "client_observed_rpm": worker.client_observed_rpm,
             "client_observed_tpm": worker.client_observed_tpm,
             "rate_limit_headers": worker.rate_limit_headers,
+            "root_cause_status": worker.root_cause_status,
+            "root_cause_evidence_count": worker.root_cause_evidence_count,
+            "root_cause_stop_reason": worker.root_cause_stop_reason,
         }
     )
     patch_path = model_dir / "model.patch"
@@ -490,6 +496,9 @@ def _write_evidence(run_dir: Path, metrics: dict[str, Any]) -> None:
             f"- Ark request ID: `{metrics['ark_last_request_id']}`",
             f"- Client-observed RPM: `{metrics['client_observed_rpm']} / {metrics['configured_rpm_limit']}`",
             f"- Client-observed TPM: `{metrics['client_observed_tpm']} / {metrics['configured_tpm_limit']}`",
+            f"- Root cause status: `{metrics['root_cause_status']}`",
+            f"- Root cause evidence count: `{metrics['root_cause_evidence_count']}`",
+            f"- Root cause stop reason: `{metrics['root_cause_stop_reason']}`",
             f"- Patch generated: `{metrics['patch_generated']}`",
             f"- Failure category: `{metrics['failure_category']}`",
             f"- Error: `{metrics['error_summary']}`",

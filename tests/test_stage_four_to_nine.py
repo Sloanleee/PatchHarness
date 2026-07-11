@@ -17,6 +17,105 @@ class TimeoutLLMClient:
 
 
 class StageFourToNineTests(unittest.TestCase):
+    def test_grep_search_normalizes_model_arguments(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            (workspace / "src").mkdir()
+            (workspace / "docs").mkdir()
+            (workspace / "src" / "types.py").write_text(
+                "class Alpha:\n    pass\nclass Beta:\n    pass\nA|B = 1\n", encoding="utf-8"
+            )
+            (workspace / "docs" / "types.py").write_text("class Alpha:\n", encoding="utf-8")
+            client = MCPClient(MCPServer(create_default_tools()))
+
+            pattern = client.run("grep_search", workspace, pattern="class Alpha", glob="src/*.py")
+            preferred = client.run(
+                "grep_search", workspace, query="class Beta", pattern="class Alpha", glob="src/*.py"
+            )
+            literal = client.run("grep_search", workspace, query="Alpha|Beta", glob="src/*.py")
+            regex = client.run(
+                "grep_search", workspace, pattern="class (Alpha|Beta)", regex=True, glob="src/*.py"
+            )
+            invalid = client.run("grep_search", workspace, pattern="[", regex=True)
+            bad_limit = client.run("grep_search", workspace, query="class", max_results=0)
+
+            self.assertEqual([m["path"] for m in pattern.data["matches"]], ["src/types.py"])
+            self.assertEqual(preferred.data["search"]["query"], "class Beta")
+            self.assertEqual(literal.data["matches"], [])
+            self.assertEqual(len(regex.data["matches"]), 2)
+            self.assertFalse(invalid.ok)
+            self.assertIn("invalid regex", invalid.error)
+            self.assertFalse(bad_limit.ok)
+
+    def test_root_cause_exhaustion_with_source_evidence_is_partial(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            (workspace / "src.py").write_text("class Target:\n    pass\n", encoding="utf-8")
+            llm = MockLLMClient(
+                [LLMAction("keep investigating", "grep_search", {"query": "class Target"}) for _ in range(6)]
+            )
+            workflow = BugfixWorkflow.from_default_configs()
+            workflow.llm_client = llm
+            result = workflow.run(BugfixRequest(
+                task_description="Fix Target", workspace_path=str(workspace), mode="fix",
+                allow_edit=True, run_tests=False, enable_llm=True,
+            ))
+
+            report = result.agent_reports[0]
+            self.assertEqual(report.status, "partial")
+            self.assertEqual(report.stop_reason, "max_iterations_exhausted")
+            self.assertGreater(report.evidence_count, 0)
+            self.assertIn("src.py", str(report.diagnostic_evidence))
+
+    def test_root_cause_exhaustion_with_only_docs_is_failed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            (workspace / "docs").mkdir()
+            (workspace / "docs" / "guide.py").write_text("class Target:\n", encoding="utf-8")
+            llm = MockLLMClient(
+                [LLMAction("keep investigating", "grep_search", {"query": "class Target"}) for _ in range(6)]
+            )
+            workflow = BugfixWorkflow.from_default_configs()
+            workflow.llm_client = llm
+            result = workflow.run(BugfixRequest(
+                task_description="Fix Target", workspace_path=str(workspace), mode="fix",
+                allow_edit=True, run_tests=False, enable_llm=True,
+            ))
+
+            self.assertEqual(result.agent_reports[0].status, "failed")
+
+    def test_partial_root_cause_continues_to_patch_with_compact_evidence(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            (workspace / "target.py").write_text(
+                "SECRET_FULL_CONTENT = 'must-not-be-forwarded'\nvalue = 1\n", encoding="utf-8"
+            )
+
+            class RecordingLLM(MockLLMClient):
+                def __init__(self):
+                    super().__init__([
+                        *[LLMAction("investigate", "grep_search", {"query": "value = 1"}) for _ in range(6)],
+                        LLMAction("patch", "edit_file", {"path": "target.py", "old": "value = 1", "new": "value = 2"}),
+                        LLMAction("done", final="patched"),
+                    ])
+                    self.batches = []
+                def complete_json(self, messages, **kwargs):
+                    self.batches.append(messages)
+                    return super().complete_json(messages, **kwargs)
+
+            llm = RecordingLLM()
+            workflow = BugfixWorkflow.from_default_configs()
+            workflow.llm_client = llm
+            result = workflow.run(BugfixRequest(
+                task_description="Fix target value", workspace_path=str(workspace), mode="fix",
+                allow_edit=True, run_tests=False, enable_llm=True,
+            ))
+
+            self.assertEqual(result.agent_reports[0].status, "partial")
+            self.assertEqual(result.changed_files, ["target.py"])
+            patch_prompt = llm.batches[6][1]["content"]
+            self.assertIn("candidate_locations", patch_prompt)
+            self.assertNotIn("SECRET_FULL_CONTENT", patch_prompt)
     def test_read_file_can_return_a_bounded_line_range(self):
         with tempfile.TemporaryDirectory() as tmp:
             workspace = Path(tmp)

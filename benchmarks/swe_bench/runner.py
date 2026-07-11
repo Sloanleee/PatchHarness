@@ -174,6 +174,14 @@ def run_patchharness(
 
     snapshot = budgeted.snapshot()
     retry_snapshot = retrying.snapshot()
+    root_cause = next(
+        (
+            report
+            for report in (response_data or {}).get("agent_reports", [])
+            if report.get("agent_name") == "root_cause_analysis"
+        ),
+        {},
+    )
     return WorkerResult(
         instance_id=instance["instance_id"],
         patch=patch_text,
@@ -192,6 +200,9 @@ def run_patchharness(
         client_observed_rpm=retry_snapshot.client_observed_rpm,
         client_observed_tpm=retry_snapshot.client_observed_tpm,
         rate_limit_headers=retry_snapshot.rate_limit_headers or {},
+        root_cause_status=str(root_cause.get("status", "")),
+        root_cause_evidence_count=int(root_cause.get("evidence_count", 0)),
+        root_cause_stop_reason=str(root_cause.get("stop_reason", "")),
     )
 
 

@@ -83,6 +83,9 @@ class WorkerResult:
     client_observed_rpm: int = 0
     client_observed_tpm: int = 0
     rate_limit_headers: dict[str, str] = field(default_factory=dict)
+    root_cause_status: str = ""
+    root_cause_evidence_count: int = 0
+    root_cause_stop_reason: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -114,6 +117,9 @@ class WorkerResult:
                 str(key): str(value)
                 for key, value in dict(data.get("rate_limit_headers") or {}).items()
             },
+            root_cause_status=str(data.get("root_cause_status", "")),
+            root_cause_evidence_count=int(data.get("root_cause_evidence_count", 0)),
+            root_cause_stop_reason=str(data.get("root_cause_stop_reason", "")),
         )
 
 

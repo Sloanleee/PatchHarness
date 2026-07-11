@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 from typing import Any
@@ -14,9 +15,60 @@ from app.skills import SkillManager
 from app.tools.base import ToolRegistry
 
 
+_SOURCE_EXTENSIONS = {".py", ".pyx", ".c", ".cpp", ".h", ".java", ".js", ".ts", ".rs", ".go"}
+_NON_SOURCE_PARTS = {"doc", "docs", "test", "tests", ".git", ".venv", "venv", "venv311", "__pycache__"}
+
+
+def _is_source_path(value: str) -> bool:
+    path = Path(value)
+    lowered = {part.lower() for part in path.parts}
+    return (
+        path.suffix.lower() in _SOURCE_EXTENSIONS
+        and not lowered.intersection(_NON_SOURCE_PARTS)
+        and not path.name.lower().startswith("test_")
+    )
+
+
+def _build_diagnostic_evidence(report: AgentReport) -> dict[str, Any]:
+    locations: list[dict[str, Any]] = []
+    ranges: list[dict[str, Any]] = []
+    seen_locations: set[tuple[str, int]] = set()
+    for observation in report.observations:
+        if not observation.get("ok"):
+            continue
+        data = observation.get("data") or {}
+        if observation.get("tool") == "grep_search":
+            for match in data.get("matches", []):
+                path = str(match.get("path", ""))
+                key = (path, int(match.get("line", 0)))
+                if _is_source_path(path) and key not in seen_locations:
+                    seen_locations.add(key)
+                    if len(locations) < 20:
+                        locations.append({"path": path, "line": key[1], "text": str(match.get("text", ""))[:500]})
+        elif observation.get("tool") == "read_file":
+            path = str(data.get("path", ""))
+            if _is_source_path(path) and len(ranges) < 20:
+                ranges.append({"path": path, "start_line": data.get("start_line"), "end_line": data.get("end_line")})
+    last_thought = report.thoughts[-1] if report.thoughts else ""
+    return {
+        "status": "partial",
+        "reason": "max_iterations_exhausted",
+        "candidate_locations": locations,
+        "read_ranges": ranges,
+        "last_thought": last_thought[:1000],
+        "remaining_work": ("Continue from the candidate source locations and complete the minimal patch." if locations or ranges else "No valid source evidence was found."),
+    }
+
+
 def _compact_prior_reports(reports: list[AgentReport], max_chars: int = 6000) -> str:
     sections: list[str] = []
     for item in reports:
+        if item.diagnostic_evidence:
+            sections.append(
+                f"[{item.agent_name}] "
+                + json.dumps(item.diagnostic_evidence, ensure_ascii=False, separators=(",", ":"))
+            )
+            continue
         observations: list[str] = []
         for observation in item.observations[-4:]:
             data = observation.get("data") or {}
@@ -289,8 +341,12 @@ class BaseAgent:
                 report.status = "failed"
                 report.summary = "LLM ReAct paused for human approval."
                 return report
-        report.status = "failed"
-        report.summary = "LLM ReAct reached max_iterations without final answer."
+        evidence = _build_diagnostic_evidence(report)
+        report.diagnostic_evidence = evidence
+        report.evidence_count = len(evidence["candidate_locations"]) + len(evidence["read_ranges"])
+        report.stop_reason = "max_iterations_exhausted"
+        report.status = "partial" if self.config.name == "root_cause_analysis" and report.evidence_count else "failed"
+        report.summary = "LLM ReAct reached max_iterations with partial source evidence." if report.status == "partial" else "LLM ReAct reached max_iterations without final answer."
         return report
 
     def _run_test_verify(self, request: BugfixRequest, workspace: Path) -> AgentReport:

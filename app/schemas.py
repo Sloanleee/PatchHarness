@@ -44,6 +44,9 @@ class AgentReport:
     requires_human_approval: bool = False
     hitl_events: list[dict[str, Any]] = field(default_factory=list)
     compression_events: list[dict[str, Any]] = field(default_factory=list)
+    stop_reason: str = ""
+    evidence_count: int = 0
+    diagnostic_evidence: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -103,6 +106,9 @@ class BugfixResponse:
                     "requires_human_approval": report.requires_human_approval,
                     "hitl_events": report.hitl_events,
                     "compression_events": report.compression_events,
+                    "stop_reason": report.stop_reason,
+                    "evidence_count": report.evidence_count,
+                    "diagnostic_evidence": report.diagnostic_evidence,
                 }
                 for report in self.agent_reports
             ],

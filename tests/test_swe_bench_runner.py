@@ -205,7 +205,15 @@ class SweBenchRunnerTests(unittest.TestCase):
             def run(self, request):
                 class Response:
                     def to_dict(self):
-                        return {"final_summary": "no change"}
+                        return {
+                            "final_summary": "no change",
+                            "agent_reports": [{
+                                "agent_name": "root_cause_analysis",
+                                "status": "partial",
+                                "evidence_count": 3,
+                                "stop_reason": "max_iterations_exhausted",
+                            }],
+                        }
 
                 return Response()
 
@@ -225,6 +233,9 @@ class SweBenchRunnerTests(unittest.TestCase):
 
         self.assertEqual(result.patch, "")
         self.assertEqual(result.failure_category, "empty_patch")
+        self.assertEqual(result.root_cause_status, "partial")
+        self.assertEqual(result.root_cause_evidence_count, 3)
+        self.assertEqual(result.root_cause_stop_reason, "max_iterations_exhausted")
 
     def test_run_patchharness_classifies_ark_rate_limit(self):
         class RateLimitedClient:
