@@ -27,6 +27,8 @@ class ContextCompressor:
         self.sleeper = sleeper
         self.network_retry_delay = network_retry_delay
         self._fallback_events: list[dict[str, Any]] = []
+        self._llm_summaries_used = 0
+        self._force_local = False
         self._encoding = _load_encoding()
 
     def maybe_compress_report(self, report: AgentReport) -> bool:
@@ -42,6 +44,8 @@ class ContextCompressor:
 
         compressed_fields = 0
         self._fallback_events = []
+        self._llm_summaries_used = 0
+        self._force_local = report.status == "failed" and not report.changed_files
         for observation in candidates:
             data = observation.get("data")
             if isinstance(data, dict):
@@ -76,6 +80,18 @@ class ContextCompressor:
     def _summarize(self, value: str) -> str:
         if self.llm_client is None:
             return value[:240] + "\n...[compressed]..."
+        if self._force_local or self._llm_summaries_used >= 1:
+            reason = "failed_report" if self._force_local else "per_report_llm_limit"
+            self._fallback_events.append({
+                "event": "compression_fallback",
+                "compression_mode": "local_fallback",
+                "fallback_reason": reason,
+                "error_type": "",
+                "llm_attempts": 0,
+                "fallback": "local_head_tail",
+            })
+            return _head_tail(value)
+        self._llm_summaries_used += 1
         messages = [
             {"role": "system", "content": "Summarize this observation. Return JSON only: {\"summary\": string}."},
             {"role": "user", "content": value[:8000]},
@@ -117,9 +133,7 @@ class ContextCompressor:
             "llm_attempts": attempts,
             "fallback": "local_head_tail",
         })
-        head = value[:400]
-        tail = value[-200:] if len(value) > 600 else ""
-        return head + "\n...[compression fallback]...\n" + tail
+        return _head_tail(value)
 
 
 def _is_timeout_error(error: Exception) -> bool:
@@ -132,6 +146,12 @@ def _is_transient_network_error(error: Exception) -> bool:
     return _is_timeout_error(error) or isinstance(error, ConnectionError) or any(
         marker in text for marker in ("connection reset", "connection aborted", "connecterror", "readerror")
     )
+
+
+def _head_tail(value: str) -> str:
+    head = value[:400]
+    tail = value[-200:] if len(value) > 600 else ""
+    return head + "\n...[compression fallback]...\n" + tail
 
 
 def _load_encoding() -> Any | None:

@@ -12,13 +12,14 @@ from app.tools.base import BaseTool, ToolRegistry, resolve_workspace_path
 
 class GrepSearchTool(BaseTool):
     name = "grep_search"
-    description = "Search text files in the workspace for a query."
+    description = "Search text files. Use query for literal text; set regex=true for regular expressions. Optional path scopes a subtree and glob filters relative paths."
     input_schema = {
         "type": "object",
         "properties": {
             "query": {"type": "string"},
             "pattern": {"type": "string"},
             "glob": {"type": "string"},
+            "path": {"type": "string"},
             "regex": {"type": "boolean", "default": False},
             "max_results": {"type": "integer", "default": 20},
         },
@@ -29,12 +30,17 @@ class GrepSearchTool(BaseTool):
         pattern = str(kwargs.get("pattern", "")).strip()
         query = query or pattern
         glob_pattern = str(kwargs.get("glob", "")).strip() or None
+        scope_value = str(kwargs.get("path", "")).strip() or "."
         regex_enabled = bool(kwargs.get("regex", False))
         max_results = int(kwargs.get("max_results", 20))
         if not query:
             return ToolResult(self.name, False, error="search query is required")
         if max_results <= 0:
             return ToolResult(self.name, False, error="max_results must be positive")
+        try:
+            scope = resolve_workspace_path(workspace, scope_value)
+        except ValueError as exc:
+            return ToolResult(self.name, False, error=str(exc))
         compiled = None
         if regex_enabled:
             try:
@@ -43,7 +49,8 @@ class GrepSearchTool(BaseTool):
                 return ToolResult(self.name, False, error=f"invalid regex: {exc}")
 
         matches: list[dict[str, Any]] = []
-        for path in workspace.rglob("*"):
+        candidates = [scope] if scope.is_file() else scope.rglob("*")
+        for path in candidates:
             if not path.is_file() or _skip_path(path):
                 continue
             relative = path.relative_to(workspace).as_posix()
@@ -66,8 +73,8 @@ class GrepSearchTool(BaseTool):
                         }
                     )
                     if len(matches) >= max_results:
-                        return ToolResult(self.name, True, {"matches": matches, "search": {"query": query, "glob": glob_pattern, "regex": regex_enabled}})
-        return ToolResult(self.name, True, {"matches": matches, "search": {"query": query, "glob": glob_pattern, "regex": regex_enabled}})
+                        return ToolResult(self.name, True, {"matches": matches, "search": {"query": query, "glob": glob_pattern, "path": scope_value, "regex": regex_enabled}})
+        return ToolResult(self.name, True, {"matches": matches, "search": {"query": query, "glob": glob_pattern, "path": scope_value, "regex": regex_enabled}})
 
 
 class ReadFileTool(BaseTool):

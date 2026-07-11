@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+import copy
 from collections import deque
 from pathlib import Path
 
@@ -39,6 +40,8 @@ class StageFourToNineTests(unittest.TestCase):
             )
             invalid = client.run("grep_search", workspace, pattern="[", regex=True)
             bad_limit = client.run("grep_search", workspace, query="class", max_results=0)
+            scoped = client.run("grep_search", workspace, query="class Alpha", path="src")
+            escaped = client.run("grep_search", workspace, query="class", path="../outside")
 
             self.assertEqual([m["path"] for m in pattern.data["matches"]], ["src/types.py"])
             self.assertEqual(preferred.data["search"]["query"], "class Beta")
@@ -47,6 +50,8 @@ class StageFourToNineTests(unittest.TestCase):
             self.assertFalse(invalid.ok)
             self.assertIn("invalid regex", invalid.error)
             self.assertFalse(bad_limit.ok)
+            self.assertEqual([m["path"] for m in scoped.data["matches"]], ["src/types.py"])
+            self.assertFalse(escaped.ok)
 
     def test_root_cause_exhaustion_with_source_evidence_is_partial(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -101,7 +106,7 @@ class StageFourToNineTests(unittest.TestCase):
                     ])
                     self.batches = []
                 def complete_json(self, messages, **kwargs):
-                    self.batches.append(messages)
+                    self.batches.append(copy.deepcopy(messages))
                     return super().complete_json(messages, **kwargs)
 
             llm = RecordingLLM()
@@ -155,6 +160,33 @@ class StageFourToNineTests(unittest.TestCase):
                 event["event"] == "compression_fallback"
                 for event in result.agent_reports[0].compression_events
             ))
+
+    def test_patch_generation_prompt_forces_progress_after_four_read_only_actions(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            (workspace / "target.py").write_text("value = 1\n", encoding="utf-8")
+            class RecordingLLM(MockLLMClient):
+                def __init__(self):
+                    super().__init__([
+                        LLMAction("diagnosed", final="target.py needs value 2"),
+                        *[LLMAction("inspect", "grep_search", {"query": "value", "path": "target.py"}) for _ in range(4)],
+                        LLMAction("edit now", "edit_file", {"path": "target.py", "old": "value = 1", "new": "value = 2"}),
+                        LLMAction("done", final="patched"),
+                    ])
+                    self.batches = []
+                def complete_json(self, messages, **kwargs):
+                    self.batches.append(copy.deepcopy(messages))
+                    return super().complete_json(messages, **kwargs)
+            llm = RecordingLLM()
+            workflow = BugfixWorkflow.from_default_configs()
+            workflow.llm_client = llm
+            result = workflow.run(BugfixRequest(
+                task_description="Fix target", workspace_path=str(workspace), mode="fix",
+                allow_edit=True, run_tests=False, enable_llm=True,
+            ))
+
+            self.assertEqual(result.changed_files, ["target.py"])
+            self.assertIn("read-only investigation budget is exhausted", str(llm.batches[5]).lower())
     def test_read_file_can_return_a_bounded_line_range(self):
         with tempfile.TemporaryDirectory() as tmp:
             workspace = Path(tmp)

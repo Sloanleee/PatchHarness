@@ -276,6 +276,8 @@ class BaseAgent:
                     "Never return boolean final. Never return string/list action_input. "
                     "When calling read_file use a narrow range: "
                     "{\"path\": \"...\", \"start_line\": 1, \"end_line\": 200}. "
+                    "For grep_search, use path to scope a file/subtree and set regex=true "
+                    "when pattern contains regular-expression syntax. "
                     "When calling edit_file use {\"path\": \"...\", \"old\": \"...\", \"new\": \"...\"}. "
                     f"Allowed actions: {', '.join(self.config.tools)}. "
                     "Use final only after the necessary tool actions are complete. "
@@ -289,6 +291,7 @@ class BaseAgent:
             },
             {"role": "user", "content": task_content},
         ]
+        read_only_actions = 0
         for _ in range(self.config.max_iterations):
             try:
                 response = self.llm_client.complete_json(messages, temperature=self.config.temperature)
@@ -327,16 +330,22 @@ class BaseAgent:
             if action.action == "edit_file":
                 action_input.setdefault("allow_edit", request.allow_edit)
             result = self._run_tool(report, workspace, action.action, **action_input)
+            if self.config.name == "patch_generation" and action.action in {"grep_search", "read_file"}:
+                read_only_actions += 1
             if result.ok and action.action == "edit_file" and "path" in result.data:
                 report.changed_files.append(str(result.data["path"]))
                 self._run_tool(report, workspace, "git_diff", path=str(result.data["path"]))
             messages.append({"role": "assistant", "content": response.content})
-            messages.append(
-                {
-                    "role": "user",
-                    "content": f"Observation: ok={result.ok}, data={result.data}, error={result.error}",
-                }
-            )
+            observation_text = f"Observation: ok={result.ok}, data={result.data}, error={result.error}"
+            if self.config.name == "patch_generation" and read_only_actions >= 4 and not report.changed_files:
+                directive = (
+                    "The read-only investigation budget is exhausted. Your next action must be "
+                    "edit_file, or final with a concrete explanation of why no safe edit is possible."
+                )
+                observation_text += "\n" + directive
+                if directive not in report.thoughts:
+                    self._record_thought(report, directive)
+            messages.append({"role": "user", "content": observation_text})
             if report.requires_human_approval:
                 report.status = "failed"
                 report.summary = "LLM ReAct paused for human approval."

@@ -57,6 +57,31 @@ class StageTwoTests(unittest.TestCase):
         self.assertIn("compression fallback", result)
         self.assertEqual(client.calls, 1)
         self.assertEqual(sleeps, [])
+
+    def test_failed_report_without_changes_uses_no_llm_compression(self):
+        client = CompressionClient([LLMResponse('{"summary":"unused"}')])
+        report = AgentReport("patch_generation", "failed", observations=[
+            {"tool": "read_file", "ok": True, "data": {"content": "x" * 1000}, "error": None}
+        ])
+        compressor = ContextCompressor(max_tokens=10, threshold=0.5, keep_recent=0, llm_client=client)
+
+        self.assertTrue(compressor.maybe_compress_report(report))
+
+        self.assertEqual(client.calls, 0)
+        self.assertIn("compression fallback", report.observations[0]["data"]["content"])
+
+    def test_report_uses_at_most_one_llm_compression_request(self):
+        client = CompressionClient([LLMResponse('{"summary":"first"}')])
+        report = AgentReport("root_cause_analysis", "partial", observations=[
+            {"tool": "read_file", "ok": True, "data": {"content": "a" * 1000, "stdout": "b" * 1000}, "error": None}
+        ])
+        compressor = ContextCompressor(max_tokens=10, threshold=0.5, keep_recent=0, llm_client=client)
+
+        self.assertTrue(compressor.maybe_compress_report(report))
+
+        self.assertEqual(client.calls, 1)
+        self.assertIn("llm_summary", report.observations[0]["data"]["content"])
+        self.assertIn("compression fallback", report.observations[0]["data"]["stdout"])
     def test_context_isolation_hides_hidden_items_and_merges_reports(self):
         request = BugfixRequest(task_description="审查项目")
         manager = ContextManager.from_request(request, ["code_review"])
