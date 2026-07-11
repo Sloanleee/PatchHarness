@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import importlib.util
+import importlib.metadata
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -172,13 +174,23 @@ def run_single(
     config_path: Path,
     results_root: Path,
     run_id: str | None = None,
+    reuse_gold_from: str | None = None,
     preflight_fn: Callable[[Path], dict[str, Any]] = preflight,
     harness_runner: Callable[[SingleCaseConfig, str | Path, Path, str], bool] = run_harness,
     worker_runner: Callable[..., WorkerResult] = run_worker_process,
 ) -> Path:
     config = load_case(config_path)
     run_id = run_id or datetime.now().strftime("%Y%m%d_%H%M%S")
+    _validate_run_id(run_id)
+    if reuse_gold_from is not None:
+        _validate_run_id(reuse_gold_from)
+        if run_id == reuse_gold_from:
+            raise ValueError("run_id and reuse_gold_from must be different")
     run_dir = results_root / run_id
+    if run_dir.exists():
+        raise FileExistsError(f"SWE-bench run already exists: {run_dir}")
+    if reuse_gold_from is not None:
+        validate_reusable_gold(results_root / reuse_gold_from, config)
     gold_dir = run_dir / "gold" / "evaluation"
     model_dir = run_dir / "model"
     model_evaluation_dir = model_dir / "evaluation"
@@ -201,6 +213,9 @@ def run_single(
         "provider": config.provider,
         "stage": "preflight",
         "gold_resolved": None,
+        "gold_reused": False,
+        "gold_source_run_id": None,
+        "swebench_version": importlib.metadata.version("swebench"),
         "model_resolved": None,
         "llm_calls": 0,
         "prompt_tokens": 0,
@@ -220,27 +235,33 @@ def run_single(
         _write_evidence(run_dir, metrics)
         return run_dir
 
-    metrics["stage"] = "gold_evaluated"
-    try:
-        metrics["gold_resolved"] = harness_runner(
-            config,
-            "gold",
-            gold_dir,
-            f"{run_id}_gold",
-        )
-    except Exception as exc:
-        _fail(metrics, "gold_evaluated", "harness_error", exc)
-        _write_evidence(run_dir, metrics)
-        return run_dir
-    if not metrics["gold_resolved"]:
-        _fail(
-            metrics,
-            "gold_evaluated",
-            "gold_evaluation_failed",
-            RuntimeError("Official gold patch did not resolve the selected instance"),
-        )
-        _write_evidence(run_dir, metrics)
-        return run_dir
+    if reuse_gold_from is not None:
+        metrics["stage"] = "gold_reused"
+        metrics["gold_resolved"] = True
+        metrics["gold_reused"] = True
+        metrics["gold_source_run_id"] = reuse_gold_from
+    else:
+        metrics["stage"] = "gold_evaluated"
+        try:
+            metrics["gold_resolved"] = harness_runner(
+                config,
+                "gold",
+                gold_dir,
+                f"{run_id}_gold",
+            )
+        except Exception as exc:
+            _fail(metrics, "gold_evaluated", "harness_error", exc)
+            _write_evidence(run_dir, metrics)
+            return run_dir
+        if not metrics["gold_resolved"]:
+            _fail(
+                metrics,
+                "gold_evaluated",
+                "gold_evaluation_failed",
+                RuntimeError("Official gold patch did not resolve the selected instance"),
+            )
+            _write_evidence(run_dir, metrics)
+            return run_dir
 
     worker_result_path = model_dir / "worker_result.json"
     worker_log_path = model_dir / "worker.log"
@@ -319,6 +340,52 @@ def _run_probe(run_command: Callable[..., Any], command: list[str]):
     )
 
 
+def validate_reusable_gold(
+    source_run_dir: Path,
+    current_config: SingleCaseConfig,
+) -> dict[str, Any]:
+    if not source_run_dir.is_dir():
+        raise FileNotFoundError(f"Gold source run does not exist: {source_run_dir}")
+    config_path = source_run_dir / "config.json"
+    metrics_path = source_run_dir / "metrics.json"
+    if not config_path.is_file() or not metrics_path.is_file():
+        raise ValueError("Gold source must contain config.json and metrics.json")
+
+    source_config = json.loads(config_path.read_text(encoding="utf-8"))
+    expected = {
+        "dataset_name": current_config.dataset_name,
+        "split": current_config.split,
+        "instance_id": current_config.instance_id,
+    }
+    for field, value in expected.items():
+        if source_config.get(field) != value:
+            raise ValueError(
+                f"Gold source {field} mismatch: {source_config.get(field)!r} != {value!r}"
+            )
+
+    source_metrics = json.loads(metrics_path.read_text(encoding="utf-8"))
+    if source_metrics.get("gold_resolved") is not True:
+        raise ValueError("Gold source metrics must record gold_resolved=true")
+    if source_metrics.get("failed_stage") == "gold_evaluated":
+        raise ValueError("Gold source contains a gold-stage failure")
+
+    gold_evaluation_dir = source_run_dir / "gold" / "evaluation"
+    try:
+        resolved = _parse_harness_report(
+            gold_evaluation_dir,
+            current_config.instance_id,
+        )
+    except (OSError, ValueError, RuntimeError, json.JSONDecodeError) as exc:
+        raise ValueError(f"Gold source lacks a valid official gold artifact: {exc}") from exc
+    if not resolved:
+        raise ValueError("Official gold artifact is not resolved")
+    return {
+        "source_run_id": source_run_dir.name,
+        "instance_id": current_config.instance_id,
+        "gold_resolved": True,
+    }
+
+
 def _parse_harness_report(phase_dir: Path, instance_id: str) -> bool:
     matches = []
     for path in phase_dir.glob("logs/run_evaluation/**/report.json"):
@@ -392,6 +459,8 @@ def _write_evidence(run_dir: Path, metrics: dict[str, Any]) -> None:
             f"- Instance: `{metrics['instance_id']}`",
             f"- Stage: `{metrics['stage']}`",
             f"- Gold resolved: `{metrics['gold_resolved']}`",
+            f"- Gold reused: `{metrics['gold_reused']}`",
+            f"- Gold source run: `{metrics['gold_source_run_id']}`",
             f"- Model resolved: `{metrics['model_resolved']}`",
             f"- LLM calls: `{metrics['llm_calls']}`",
             f"- Total tokens: `{metrics['total_tokens']}`",
@@ -403,3 +472,10 @@ def _write_evidence(run_dir: Path, metrics: dict[str, Any]) -> None:
         ]
     )
     (run_dir / "summary.md").write_text(summary + "\n", encoding="utf-8")
+
+
+def _validate_run_id(run_id: str) -> None:
+    if not re.fullmatch(r"[A-Za-z0-9_.-]+", run_id):
+        raise ValueError(
+            "run_id values may contain only letters, numbers, dot, underscore, and hyphen"
+        )
