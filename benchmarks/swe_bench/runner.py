@@ -9,9 +9,11 @@ from typing import Any, Callable
 
 from app.graph import BugfixWorkflow
 from app.llm import (
+    ArkAPIError,
     BudgetedLLMClient,
     LLMCallBudgetExceeded,
     LLMTokenBudgetExceeded,
+    RetryingLLMClient,
     create_llm_client,
 )
 from app.schemas import BugfixRequest
@@ -104,6 +106,9 @@ def run_patchharness(
     client_factory: Callable[[str], Any] = create_llm_client,
     workflow_builder: Callable[[Any], Any] | None = None,
     patch_collector: Callable[[Path], str] = collect_patch,
+    retry_delays: tuple[float, ...] = (5, 10, 20),
+    sleeper: Callable[[float], None] = time.sleep,
+    event_sink: Callable[[dict[str, Any]], None] | None = None,
 ) -> WorkerResult:
     start = time.perf_counter()
     response_data: dict[str, Any] | None = None
@@ -117,11 +122,19 @@ def run_patchharness(
         max_calls=config.max_calls,
         max_tokens=config.max_tokens,
     )
+    retrying = RetryingLLMClient(
+        budgeted,
+        retry_delays=retry_delays,
+        sleeper=sleeper,
+        event_sink=event_sink,
+        rpm_limit=config.rpm_limit,
+        tpm_limit=config.tpm_limit,
+    )
     if workflow_builder is None:
         workflow_builder = _build_workflow
 
     try:
-        workflow = workflow_builder(budgeted)
+        workflow = workflow_builder(retrying)
         response = workflow.run(
             BugfixRequest(
                 task_description=instance["problem_statement"],
@@ -141,7 +154,9 @@ def run_patchharness(
         failure_category = "token_budget_exceeded"
         error_summary = str(exc)
     except Exception as exc:
-        if _is_rate_limit_error(exc):
+        if isinstance(exc, ArkAPIError):
+            failure_category = _ark_failure_category(exc)
+        elif _is_rate_limit_error(exc):
             failure_category = "ark_rate_limited"
         else:
             failure_category = "ark_timeout" if _is_timeout_error(exc) else "tool_error"
@@ -158,6 +173,7 @@ def run_patchharness(
         failure_category = "empty_patch"
 
     snapshot = budgeted.snapshot()
+    retry_snapshot = retrying.snapshot()
     return WorkerResult(
         instance_id=instance["instance_id"],
         patch=patch_text,
@@ -168,6 +184,14 @@ def run_patchharness(
         elapsed_seconds=time.perf_counter() - start,
         failure_category=failure_category,
         error_summary=error_summary,
+        ark_attempts=retry_snapshot.attempts,
+        ark_retries=retry_snapshot.retries,
+        ark_last_request_id=retry_snapshot.last_request_id,
+        ark_error_code=retry_snapshot.last_error_code,
+        ark_retry_after=retry_snapshot.last_retry_after,
+        client_observed_rpm=retry_snapshot.client_observed_rpm,
+        client_observed_tpm=retry_snapshot.client_observed_tpm,
+        rate_limit_headers=retry_snapshot.rate_limit_headers or {},
     )
 
 
@@ -189,3 +213,16 @@ def _is_timeout_error(exc: Exception) -> bool:
 def _is_rate_limit_error(exc: Exception) -> bool:
     text = str(exc).lower()
     return "429" in text or "too many requests" in text
+
+
+def _ark_failure_category(error: ArkAPIError) -> str:
+    categories = {
+        "RequestBurstTooFast": "ark_burst_limited",
+        "ServerOverloaded": "ark_server_overloaded",
+        "ConcurrentOperationLimitExceeded": "ark_concurrency_limited",
+        "RateLimitExceeded": "ark_rate_limited",
+        "Throttling": "ark_rate_limited",
+        "AccountQuotaExceeded": "ark_account_quota_exceeded",
+        "QuotaExceeded": "ark_quota_exceeded",
+    }
+    return categories.get(error.error_code, "ark_rate_limited_unknown")

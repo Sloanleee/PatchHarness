@@ -1,9 +1,59 @@
 from __future__ import annotations
 
 import os
+import json
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from typing import Any
 
 from app.llm.client import LLMResponse
+
+
+_RETRYABLE_429_CODES = {
+    "RequestBurstTooFast",
+    "ServerOverloaded",
+    "ConcurrentOperationLimitExceeded",
+    "RateLimitExceeded",
+    "Throttling",
+}
+_SENSITIVE_KEYS = {
+    "authorization",
+    "api_key",
+    "access_token",
+    "secret",
+    "token",
+    "credential",
+}
+
+
+class ArkAPIError(RuntimeError):
+    def __init__(
+        self,
+        *,
+        status_code: int,
+        error_code: str,
+        error_type: str,
+        message: str,
+        request_id: str,
+        retry_after: float | None,
+        response_body: Any,
+        rate_limit_headers: dict[str, str],
+        retryable: bool,
+    ) -> None:
+        self.status_code = status_code
+        self.error_code = error_code
+        self.error_type = error_type
+        self.message = message
+        self.request_id = request_id
+        self.retry_after = retry_after
+        self.response_body = response_body
+        self.rate_limit_headers = rate_limit_headers
+        self.retryable = retryable
+        details = json.dumps(response_body, ensure_ascii=False, default=str)[:4000]
+        super().__init__(
+            f"Ark API {status_code} {error_code or error_type}: {message}; "
+            f"request_id={request_id or 'unknown'}; body={details}"
+        )
 
 
 class VolcengineArkClient:
@@ -50,7 +100,9 @@ class VolcengineArkClient:
             json=payload,
             timeout=self.timeout,
         )
-        response.raise_for_status()
+        status_code = int(getattr(response, "status_code", 200))
+        if status_code >= 400:
+            raise _ark_error_from_response(response, self.api_key)
         data = response.json()
         content = data.get("output_text") or _extract_output_text(data)
         usage = data.get("usage", {})
@@ -109,3 +161,76 @@ def _responses_url(base_url: str) -> str:
     if normalized.endswith("/responses"):
         return normalized
     return f"{normalized}/responses"
+
+
+def _ark_error_from_response(response: Any, api_key: str) -> ArkAPIError:
+    try:
+        raw_body = response.json()
+    except Exception:
+        raw_body = {"error": {"message": str(getattr(response, "text", ""))[:4000]}}
+    body = _redact_value(raw_body, api_key)
+    error = body.get("error", {}) if isinstance(body, dict) else {}
+    if not isinstance(error, dict):
+        error = {"message": str(error)}
+    headers = {
+        str(key).lower(): str(value)
+        for key, value in dict(getattr(response, "headers", {}) or {}).items()
+    }
+    diagnostic_headers = {
+        key: value
+        for key, value in headers.items()
+        if "ratelimit" in key
+        or key in {"retry-after", "x-request-id", "x-tt-logid"}
+    }
+    code = str(error.get("code", ""))
+    error_type = str(error.get("type", ""))
+    request_id = str(
+        error.get("request_id")
+        or (body.get("request_id") if isinstance(body, dict) else "")
+        or headers.get("x-request-id")
+        or headers.get("x-tt-logid")
+        or ""
+    )
+    message = str(error.get("message", ""))
+    status_code = int(getattr(response, "status_code", 0))
+    return ArkAPIError(
+        status_code=status_code,
+        error_code=code,
+        error_type=error_type,
+        message=message,
+        request_id=request_id,
+        retry_after=_parse_retry_after(headers.get("retry-after")),
+        response_body=body,
+        rate_limit_headers=diagnostic_headers,
+        retryable=status_code == 429 and code in _RETRYABLE_429_CODES,
+    )
+
+
+def _redact_value(value: Any, api_key: str, key: str = "") -> Any:
+    if key.lower() in _SENSITIVE_KEYS:
+        return "[REDACTED]"
+    if isinstance(value, dict):
+        return {
+            str(item_key): _redact_value(item_value, api_key, str(item_key))
+            for item_key, item_value in value.items()
+        }
+    if isinstance(value, list):
+        return [_redact_value(item, api_key) for item in value]
+    if isinstance(value, str) and api_key:
+        return value.replace(api_key, "[REDACTED]")
+    return value
+
+
+def _parse_retry_after(value: str | None) -> float | None:
+    if not value:
+        return None
+    try:
+        return max(0.0, float(value))
+    except ValueError:
+        try:
+            retry_at = parsedate_to_datetime(value)
+            if retry_at.tzinfo is None:
+                retry_at = retry_at.replace(tzinfo=timezone.utc)
+            return max(0.0, (retry_at - datetime.now(timezone.utc)).total_seconds())
+        except (TypeError, ValueError, OverflowError):
+            return None

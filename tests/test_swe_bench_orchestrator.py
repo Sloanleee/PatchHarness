@@ -161,6 +161,14 @@ class SweBenchOrchestratorTests(unittest.TestCase):
             prompt_tokens=100,
             completion_tokens=20,
             elapsed_seconds=1.5,
+            ark_attempts=2,
+            ark_retries=1,
+            ark_last_request_id="req-123",
+            ark_error_code="RequestBurstTooFast",
+            ark_retry_after=5.0,
+            client_observed_rpm=2,
+            client_observed_tpm=120,
+            rate_limit_headers={"retry-after": "5"},
         )
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -185,6 +193,12 @@ class SweBenchOrchestratorTests(unittest.TestCase):
         self.assertTrue(metrics["gold_resolved"])
         self.assertFalse(metrics["model_resolved"])
         self.assertEqual(metrics["llm_calls"], 2)
+        self.assertEqual(metrics["ark_attempts"], 2)
+        self.assertEqual(metrics["ark_retries"], 1)
+        self.assertEqual(metrics["ark_last_request_id"], "req-123")
+        self.assertEqual(metrics["ark_error_code"], "RequestBurstTooFast")
+        self.assertEqual(metrics["client_observed_rpm"], 2)
+        self.assertEqual(metrics["client_observed_tpm"], 120)
 
     def test_error_output_redacts_ark_key(self):
         secret = "secret-ark-key"

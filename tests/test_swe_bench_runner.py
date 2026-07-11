@@ -11,6 +11,7 @@ from benchmarks.swe_bench.runner import (
     prepare_workspace,
     run_patchharness,
 )
+from app.llm import ArkAPIError, LLMResponse
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -68,6 +69,14 @@ class SweBenchContractTests(unittest.TestCase):
             prompt_tokens=100,
             completion_tokens=20,
             elapsed_seconds=1.25,
+            ark_attempts=4,
+            ark_retries=3,
+            ark_last_request_id="req-123",
+            ark_error_code="RequestBurstTooFast",
+            ark_retry_after=7.0,
+            client_observed_rpm=4,
+            client_observed_tpm=120,
+            rate_limit_headers={"retry-after": "7"},
         )
 
         restored = WorkerResult.from_dict(result.to_dict())
@@ -243,6 +252,72 @@ class SweBenchRunnerTests(unittest.TestCase):
 
         self.assertEqual(result.llm_calls, 1)
         self.assertEqual(result.failure_category, "ark_rate_limited")
+
+    def test_run_patchharness_retries_through_budget_and_records_diagnostics(self):
+        class TransientClient:
+            def __init__(self):
+                self.calls = 0
+
+            def complete_json(self, messages, **kwargs):
+                self.calls += 1
+                if self.calls == 1:
+                    raise ArkAPIError(
+                        status_code=429,
+                        error_code="RequestBurstTooFast",
+                        error_type="TooManyRequests",
+                        message="slow down",
+                        request_id="req-retry",
+                        retry_after=0,
+                        response_body={"error": {"code": "RequestBurstTooFast"}},
+                        rate_limit_headers={"retry-after": "0"},
+                        retryable=True,
+                    )
+                return LLMResponse(
+                    '{"thought":"done","final":"done"}',
+                    prompt_tokens=10,
+                    completion_tokens=5,
+                )
+
+        raw_client = TransientClient()
+
+        class FakeWorkflow:
+            def __init__(self, client):
+                self.client = client
+
+            def run(self, request):
+                self.client.complete_json([])
+
+                class Response:
+                    def to_dict(self):
+                        return {"final_summary": "done"}
+
+                return Response()
+
+        result = run_patchharness(
+            self.config,
+            {
+                "instance_id": self.config.instance_id,
+                "repo": "sympy/sympy",
+                "base_commit": "abc123",
+                "problem_statement": "Handle AttributeError in sympify.",
+            },
+            Path("workspace"),
+            client_factory=lambda provider: raw_client,
+            workflow_builder=lambda client: FakeWorkflow(client),
+            patch_collector=lambda workspace: "diff --git a/a.py b/a.py\n",
+            retry_delays=(0,),
+            sleeper=lambda seconds: None,
+            event_sink=lambda event: None,
+        )
+
+        self.assertEqual(raw_client.calls, 2)
+        self.assertEqual(result.llm_calls, 2)
+        self.assertEqual(result.ark_attempts, 2)
+        self.assertEqual(result.ark_retries, 1)
+        self.assertEqual(result.ark_last_request_id, "req-retry")
+        self.assertEqual(result.ark_error_code, "RequestBurstTooFast")
+        self.assertEqual(result.client_observed_rpm, 2)
+        self.assertEqual(result.client_observed_tpm, 15)
 
 
 if __name__ == "__main__":

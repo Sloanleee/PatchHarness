@@ -205,6 +205,8 @@ def run_single(
         "max_calls": config.max_calls,
         "max_tokens": config.max_tokens,
         "timeout_seconds": config.timeout_seconds,
+        "rpm_limit": config.rpm_limit,
+        "tpm_limit": config.tpm_limit,
     })
 
     metrics: dict[str, Any] = {
@@ -221,6 +223,16 @@ def run_single(
         "prompt_tokens": 0,
         "completion_tokens": 0,
         "total_tokens": 0,
+        "ark_attempts": 0,
+        "ark_retries": 0,
+        "ark_last_request_id": "",
+        "ark_error_code": "",
+        "ark_retry_after": None,
+        "client_observed_rpm": 0,
+        "client_observed_tpm": 0,
+        "configured_rpm_limit": config.rpm_limit,
+        "configured_tpm_limit": config.tpm_limit,
+        "rate_limit_headers": {},
         "elapsed_seconds": 0.0,
         "patch_generated": False,
         "failed_stage": "",
@@ -297,6 +309,14 @@ def run_single(
             "patch_generated": bool(worker.patch),
             "failure_category": worker.failure_category,
             "error_summary": _redact(worker.error_summary),
+            "ark_attempts": worker.ark_attempts,
+            "ark_retries": worker.ark_retries,
+            "ark_last_request_id": worker.ark_last_request_id,
+            "ark_error_code": worker.ark_error_code,
+            "ark_retry_after": worker.ark_retry_after,
+            "client_observed_rpm": worker.client_observed_rpm,
+            "client_observed_tpm": worker.client_observed_tpm,
+            "rate_limit_headers": worker.rate_limit_headers,
         }
     )
     patch_path = model_dir / "model.patch"
@@ -464,6 +484,12 @@ def _write_evidence(run_dir: Path, metrics: dict[str, Any]) -> None:
             f"- Model resolved: `{metrics['model_resolved']}`",
             f"- LLM calls: `{metrics['llm_calls']}`",
             f"- Total tokens: `{metrics['total_tokens']}`",
+            f"- Ark attempts: `{metrics['ark_attempts']}`",
+            f"- Ark retries: `{metrics['ark_retries']}`",
+            f"- Ark error code: `{metrics['ark_error_code']}`",
+            f"- Ark request ID: `{metrics['ark_last_request_id']}`",
+            f"- Client-observed RPM: `{metrics['client_observed_rpm']} / {metrics['configured_rpm_limit']}`",
+            f"- Client-observed TPM: `{metrics['client_observed_tpm']} / {metrics['configured_tpm_limit']}`",
             f"- Patch generated: `{metrics['patch_generated']}`",
             f"- Failure category: `{metrics['failure_category']}`",
             f"- Error: `{metrics['error_summary']}`",

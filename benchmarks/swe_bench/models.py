@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +16,8 @@ class SingleCaseConfig:
     max_calls: int
     max_tokens: int
     timeout_seconds: int
+    rpm_limit: int = 500
+    tpm_limit: int = 1_000_000
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "SingleCaseConfig":
@@ -44,12 +46,20 @@ class SingleCaseConfig:
             max_calls=int(data["max_calls"]),
             max_tokens=int(data["max_tokens"]),
             timeout_seconds=int(data["timeout_seconds"]),
+            rpm_limit=int(data.get("rpm_limit", 500)),
+            tpm_limit=int(data.get("tpm_limit", 1_000_000)),
         )
         if not config.instance_id:
             raise ValueError("instance_id must not be empty")
         if config.provider != "ark":
             raise ValueError("single-instance provider must be ark")
-        if min(config.max_calls, config.max_tokens, config.timeout_seconds) <= 0:
+        if min(
+            config.max_calls,
+            config.max_tokens,
+            config.timeout_seconds,
+            config.rpm_limit,
+            config.tpm_limit,
+        ) <= 0:
             raise ValueError("budgets and timeout must be positive")
         return config
 
@@ -65,6 +75,14 @@ class WorkerResult:
     elapsed_seconds: float
     failure_category: str = ""
     error_summary: str = ""
+    ark_attempts: int = 0
+    ark_retries: int = 0
+    ark_last_request_id: str = ""
+    ark_error_code: str = ""
+    ark_retry_after: float | None = None
+    client_observed_rpm: int = 0
+    client_observed_tpm: int = 0
+    rate_limit_headers: dict[str, str] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -81,6 +99,21 @@ class WorkerResult:
             elapsed_seconds=float(data.get("elapsed_seconds", 0.0)),
             failure_category=str(data.get("failure_category", "")),
             error_summary=str(data.get("error_summary", "")),
+            ark_attempts=int(data.get("ark_attempts", 0)),
+            ark_retries=int(data.get("ark_retries", 0)),
+            ark_last_request_id=str(data.get("ark_last_request_id", "")),
+            ark_error_code=str(data.get("ark_error_code", "")),
+            ark_retry_after=(
+                float(data["ark_retry_after"])
+                if data.get("ark_retry_after") is not None
+                else None
+            ),
+            client_observed_rpm=int(data.get("client_observed_rpm", 0)),
+            client_observed_tpm=int(data.get("client_observed_tpm", 0)),
+            rate_limit_headers={
+                str(key): str(value)
+                for key, value in dict(data.get("rate_limit_headers") or {}).items()
+            },
         )
 
 
