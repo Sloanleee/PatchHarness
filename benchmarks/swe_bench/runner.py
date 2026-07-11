@@ -141,7 +141,10 @@ def run_patchharness(
         failure_category = "token_budget_exceeded"
         error_summary = str(exc)
     except Exception as exc:
-        failure_category = "ark_timeout" if _is_timeout_error(exc) else "tool_error"
+        if _is_rate_limit_error(exc):
+            failure_category = "ark_rate_limited"
+        else:
+            failure_category = "ark_timeout" if _is_timeout_error(exc) else "tool_error"
         error_summary = str(exc)
 
     try:
@@ -181,3 +184,8 @@ def _is_timeout_error(exc: Exception) -> bool:
     name = type(exc).__name__.lower()
     text = str(exc).lower()
     return "timeout" in name or "timed out" in text or "timeout" in text
+
+
+def _is_rate_limit_error(exc: Exception) -> bool:
+    text = str(exc).lower()
+    return "429" in text or "too many requests" in text

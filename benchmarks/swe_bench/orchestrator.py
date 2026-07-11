@@ -325,11 +325,35 @@ def _parse_harness_report(phase_dir: Path, instance_id: str) -> bool:
         payload = json.loads(path.read_text(encoding="utf-8"))
         if instance_id in payload:
             matches.append(payload[instance_id])
-    if len(matches) != 1 or "resolved" not in matches[0]:
+    if len(matches) == 1 and "resolved" in matches[0]:
+        return bool(matches[0]["resolved"])
+    if len(matches) > 1:
         raise RuntimeError(
             f"Expected one Harness report for {instance_id}, found {len(matches)}"
         )
-    return bool(matches[0]["resolved"])
+
+    summaries = []
+    for path in phase_dir.glob("*.json"):
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        if payload.get("schema_version") == 2 and instance_id in payload.get(
+            "submitted_ids", []
+        ):
+            summaries.append(payload)
+    if len(summaries) != 1:
+        raise RuntimeError(
+            f"Expected one Harness report for {instance_id}, found {len(summaries)}"
+        )
+    summary = summaries[0]
+    if instance_id in summary.get("error_ids", []):
+        raise RuntimeError(f"SWE-bench Harness reported an error for {instance_id}")
+    if instance_id in summary.get("resolved_ids", []):
+        return True
+    non_resolved_ids = set(summary.get("unresolved_ids", [])) | set(
+        summary.get("empty_patch_ids", [])
+    )
+    if instance_id in non_resolved_ids:
+        return False
+    raise RuntimeError(f"SWE-bench Harness did not score {instance_id}")
 
 
 def _fail(metrics: dict[str, Any], stage: str, category: str, exc: Exception) -> None:

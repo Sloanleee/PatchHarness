@@ -6,8 +6,13 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from benchmarks.swe_bench.models import WorkerResult
-from benchmarks.swe_bench.orchestrator import PreflightError, preflight, run_single
+from benchmarks.swe_bench.models import SingleCaseConfig, WorkerResult
+from benchmarks.swe_bench.orchestrator import (
+    PreflightError,
+    preflight,
+    run_harness,
+    run_single,
+)
 
 
 CASE = {
@@ -178,6 +183,34 @@ class SweBenchOrchestratorTests(unittest.TestCase):
         self.assertNotIn(secret, summary)
         self.assertNotIn(secret, metrics_text)
         self.assertIn("[REDACTED]", metrics_text)
+
+    def test_harness_empty_patch_summary_is_scored_unresolved(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            phase_dir = Path(tmp)
+            summary = {
+                "schema_version": 2,
+                "submitted_ids": [CASE["instance_id"]],
+                "resolved_ids": [],
+                "unresolved_ids": [],
+                "empty_patch_ids": [CASE["instance_id"]],
+                "error_ids": [],
+            }
+            (phase_dir / "PatchHarness-Ark.run_model.json").write_text(
+                json.dumps(summary),
+                encoding="utf-8",
+            )
+
+            resolved = run_harness(
+                SingleCaseConfig.from_dict(CASE),
+                phase_dir / "predictions.jsonl",
+                phase_dir,
+                "run_model",
+                run_command=lambda command, **kwargs: subprocess.CompletedProcess(
+                    command, 0, "No instances to run.", ""
+                ),
+            )
+
+        self.assertFalse(resolved)
 
 
 if __name__ == "__main__":

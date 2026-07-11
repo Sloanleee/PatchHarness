@@ -215,6 +215,35 @@ class SweBenchRunnerTests(unittest.TestCase):
         self.assertEqual(result.patch, "")
         self.assertEqual(result.failure_category, "empty_patch")
 
+    def test_run_patchharness_classifies_ark_rate_limit(self):
+        class RateLimitedClient:
+            def complete_json(self, messages, **kwargs):
+                raise RuntimeError("429 Too Many Requests")
+
+        class FakeWorkflow:
+            def __init__(self, client):
+                self.client = client
+
+            def run(self, request):
+                self.client.complete_json([])
+
+        result = run_patchharness(
+            self.config,
+            {
+                "instance_id": self.config.instance_id,
+                "repo": "sympy/sympy",
+                "base_commit": "abc123",
+                "problem_statement": "Handle AttributeError in sympify.",
+            },
+            Path("workspace"),
+            client_factory=lambda provider: RateLimitedClient(),
+            workflow_builder=lambda client: FakeWorkflow(client),
+            patch_collector=lambda workspace: "",
+        )
+
+        self.assertEqual(result.llm_calls, 1)
+        self.assertEqual(result.failure_category, "ark_rate_limited")
+
 
 if __name__ == "__main__":
     unittest.main()
