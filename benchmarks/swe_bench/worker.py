@@ -6,6 +6,7 @@ from pathlib import Path
 
 from benchmarks.swe_bench.models import load_case
 from benchmarks.swe_bench.runner import (
+    ensure_git_cache,
     load_instance,
     prepare_workspace,
     run_patchharness,
@@ -16,7 +17,15 @@ def main() -> None:
     args = _parse_args()
     config = load_case(args.config)
     instance = load_instance(config)
-    workspace = prepare_workspace(instance, args.workspace)
+    project_root = Path(__file__).resolve().parents[2]
+    cache_name = instance["repo"].replace("/", "__") + ".git"
+    git_cache = project_root / "results" / "swe_bench_single" / "cache" / "git" / cache_name
+    seed_workspace = (
+        project_root / "results" / "swe_bench_single" / "runs"
+        / "swe_single_002" / "workspace"
+    )
+    ensure_git_cache(instance, git_cache, seed_workspace)
+    workspace = prepare_workspace(instance, args.workspace, git_cache=git_cache)
     result = run_patchharness(config, instance, workspace)
     _write_json_atomic(args.result, result.to_dict())
 

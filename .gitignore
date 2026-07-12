@@ -15,5 +15,6 @@ results/real_llm_benchmark/runs/
 results/langgraph_vs_sequential/runs
 results/production_demo/runs/
 results/swe_bench_single/runs/
+results/swe_bench_single/cache/
 docs/
 requirements-optional.txt

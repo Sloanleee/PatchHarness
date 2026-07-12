@@ -7,9 +7,15 @@ from pathlib import Path
 from benchmarks.swe_bench.models import SingleCaseConfig, WorkerResult, load_case
 from benchmarks.swe_bench.runner import (
     collect_patch,
+    ensure_git_cache,
     load_instance,
     prepare_workspace,
     run_patchharness,
+)
+from benchmarks.swe_bench.validation import (
+    ValidationResult,
+    validate_patch_static,
+    run_docker_smoke_test,
 )
 from app.llm import ArkAPIError, LLMResponse
 
@@ -31,6 +37,8 @@ class SweBenchContractTests(unittest.TestCase):
         self.assertGreater(case.timeout_seconds, 0)
         self.assertGreater(case.rpm_limit, 0)
         self.assertGreater(case.tpm_limit, 0)
+        self.assertEqual(case.max_repair_attempts, 1)
+        self.assertTrue(case.smoke_test_command)
 
     def test_rejects_invalid_single_case_values(self):
         valid = {
@@ -155,6 +163,71 @@ class SweBenchRunnerTests(unittest.TestCase):
         self.assertEqual(calls[1][0], ["git", "checkout", "--detach", "abc123"])
         self.assertNotIn("shell", calls[0][1])
 
+    def test_git_cache_is_seeded_from_swe_single_002_without_network_fetch(self):
+        calls = []
+
+        def fake_run(command, **kwargs):
+            calls.append((command, kwargs))
+            if command[0:3] == ["git", "-C", str(Path("cache.git"))] and "cat-file" in command:
+                return subprocess.CompletedProcess(command, 0, "", "")
+            return subprocess.CompletedProcess(command, 0, "", "")
+
+        ensure_git_cache(
+            {"repo": "sympy/sympy", "base_commit": "abc123"},
+            Path("cache.git"),
+            Path("swe_single_002/workspace"),
+            run_command=fake_run,
+            path_exists=lambda path: path == Path("swe_single_002/workspace"),
+        )
+
+        self.assertEqual(
+            calls[0][0],
+            ["git", "clone", "--bare", "swe_single_002/workspace", "cache.git"],
+        )
+        self.assertFalse(any("fetch" in command for command, _ in calls))
+
+    def test_git_cache_fetches_only_when_base_commit_is_missing(self):
+        calls = []
+
+        def fake_run(command, **kwargs):
+            calls.append(command)
+            if "cat-file" in command:
+                return subprocess.CompletedProcess(command, 1, "", "missing")
+            return subprocess.CompletedProcess(command, 0, "", "")
+
+        ensure_git_cache(
+            {"repo": "sympy/sympy", "base_commit": "abc123"},
+            Path("existing-cache.git"),
+            Path("seed"),
+            run_command=fake_run,
+            path_exists=lambda path: True,
+        )
+
+        fetch = next(command for command in calls if "fetch" in command)
+        self.assertEqual(fetch[-1], "abc123")
+
+    def test_prepare_workspace_clones_from_cache_when_provided(self):
+        calls = []
+
+        def fake_run(command, **kwargs):
+            calls.append(command)
+            return subprocess.CompletedProcess(command, 0, "", "")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp) / "workspace"
+            prepare_workspace(
+                {"repo": "sympy/sympy", "base_commit": "abc123"},
+                workspace,
+                git_cache=Path("cache.git"),
+                run_command=fake_run,
+            )
+
+        self.assertEqual(
+            calls[0],
+            ["git", "clone", "--shared", "--no-checkout", "cache.git", str(workspace)],
+        )
+        self.assertIn(["git", "remote", "set-url", "origin", "https://github.com/sympy/sympy.git"], calls)
+
     def test_collect_patch_returns_binary_diff_verbatim(self):
         expected = "diff --git a/a.py b/a.py\n+change\n"
 
@@ -199,6 +272,141 @@ class SweBenchRunnerTests(unittest.TestCase):
         self.assertTrue(request.enable_llm)
         self.assertFalse(request.run_tests)
         self.assertEqual(result.failure_category, "")
+
+    def test_static_validation_rejects_duplicate_slots_assignment(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            source = workspace / "basic.py"
+            source.write_text(
+                "class Basic:\n    __slots__ = ()\n    __slots__ = ()\n",
+                encoding="utf-8",
+            )
+
+            result = validate_patch_static(workspace, ["basic.py"])
+
+        self.assertFalse(result.ok)
+        self.assertIn("duplicate class assignment", result.error)
+
+    def test_docker_smoke_test_uses_argument_list_and_isolation(self):
+        calls = []
+
+        def fake_run(command, **kwargs):
+            calls.append((command, kwargs))
+            if command[:3] == ["docker", "image", "inspect"]:
+                return subprocess.CompletedProcess(command, 0, "image", "")
+            return subprocess.CompletedProcess(command, 0, "ok", "")
+
+        result = run_docker_smoke_test(
+            Path("/workspace"),
+            "sympy__sympy-20590",
+            ["python", "-c", "from sympy import Basic; assert Basic()"],
+            run_command=fake_run,
+        )
+
+        self.assertTrue(result.ok)
+        command, kwargs = calls[1]
+        self.assertEqual(command[:2], ["docker", "run"])
+        self.assertIn("--network", command)
+        self.assertIn("none", command)
+        self.assertNotIn("shell", kwargs)
+
+    def test_docker_smoke_test_prepares_missing_instance_image(self):
+        calls = []
+
+        def fake_run(command, **kwargs):
+            calls.append(command)
+            return subprocess.CompletedProcess(
+                command,
+                1 if command[:3] == ["docker", "image", "inspect"] else 0,
+                "",
+                "missing" if command[:3] == ["docker", "image", "inspect"] else "",
+            )
+
+        result = run_docker_smoke_test(
+            Path("/workspace"),
+            "sympy__sympy-20590",
+            ["python", "-c", "assert True"],
+            run_command=fake_run,
+        )
+
+        self.assertTrue(result.ok)
+        self.assertIn("swebench.harness.prepare_images", calls[1])
+        self.assertIn("--tag", calls[1])
+        self.assertIn("--env_image_tag", calls[1])
+        self.assertEqual(calls[2][:2], ["docker", "run"])
+
+    def test_failed_validation_triggers_only_one_repair_workflow(self):
+        requests = []
+
+        class FakeWorkflow:
+            def run(self, request):
+                requests.append(request)
+
+                class Response:
+                    def to_dict(self):
+                        return {"final_summary": "attempt"}
+
+                return Response()
+
+        patches = iter(["bad patch", "good patch"])
+        validations = iter([
+            ValidationResult(False, "docker_smoke", "smoke failed", stderr="assertion failed"),
+            ValidationResult(True, "docker_smoke"),
+        ])
+        result = run_patchharness(
+            self.config,
+            {
+                "instance_id": self.config.instance_id,
+                "repo": "sympy/sympy",
+                "base_commit": "abc123",
+                "problem_statement": "Fix it.",
+            },
+            Path("workspace"),
+            client_factory=lambda provider: object(),
+            workflow_builder=lambda client: FakeWorkflow(),
+            patch_collector=lambda workspace: next(patches),
+            patch_validator=lambda workspace, config: next(validations),
+        )
+
+        self.assertEqual(len(requests), 2)
+        self.assertIn("smoke failed", requests[1].task_description)
+        self.assertEqual(result.patch, "good patch")
+        self.assertTrue(result.validation_ok)
+        self.assertEqual(result.repair_attempts, 1)
+
+    def test_docker_prepare_failure_does_not_trigger_model_repair(self):
+        requests = []
+
+        class FakeWorkflow:
+            def run(self, request):
+                requests.append(request)
+
+                class Response:
+                    def to_dict(self):
+                        return {"final_summary": "patched"}
+
+                return Response()
+
+        result = run_patchharness(
+            self.config,
+            {
+                "instance_id": self.config.instance_id,
+                "repo": "sympy/sympy",
+                "base_commit": "abc123",
+                "problem_statement": "Fix it.",
+            },
+            Path("workspace"),
+            client_factory=lambda provider: object(),
+            workflow_builder=lambda client: FakeWorkflow(),
+            patch_collector=lambda workspace: "valid patch",
+            patch_validator=lambda workspace, config: ValidationResult(
+                False, "docker_prepare", "image preparation failed"
+            ),
+        )
+
+        self.assertEqual(len(requests), 1)
+        self.assertEqual(result.repair_attempts, 0)
+        self.assertEqual(result.failure_category, "validation_infrastructure_error")
 
     def test_run_patchharness_classifies_empty_patch(self):
         class FakeWorkflow:

@@ -206,6 +206,41 @@ class SweBenchOrchestratorTests(unittest.TestCase):
         self.assertEqual(metrics["root_cause_evidence_count"], 3)
         self.assertEqual(metrics["root_cause_stop_reason"], "max_iterations_exhausted")
 
+    def test_official_resolution_clears_auxiliary_validation_failure(self):
+        worker = WorkerResult(
+            instance_id=CASE["instance_id"],
+            patch="diff --git a/a.py b/a.py\n",
+            response={"final_summary": "patched"},
+            llm_calls=1,
+            prompt_tokens=10,
+            completion_tokens=5,
+            elapsed_seconds=1.0,
+            failure_category="validation_infrastructure_error",
+            error_summary="image preparation failed",
+            validation_stage="docker_prepare",
+            validation_ok=False,
+            validation_error="image preparation failed",
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            run_dir = run_single(
+                self._config(root),
+                root / "results",
+                "run_resolved_with_warning",
+                reuse_gold_from=None,
+                preflight_fn=lambda project_root: {"interpreter": "venv311/bin/python"},
+                harness_runner=lambda *args: True,
+                worker_runner=lambda *args: worker,
+            )
+            metrics = json.loads((run_dir / "metrics.json").read_text(encoding="utf-8"))
+
+        self.assertTrue(metrics["model_resolved"])
+        self.assertEqual(metrics["failure_category"], "")
+        self.assertEqual(metrics["error_summary"], "")
+        self.assertEqual(metrics["validation_stage"], "docker_prepare")
+        self.assertFalse(metrics["validation_ok"])
+
     def test_error_output_redacts_ark_key(self):
         secret = "secret-ark-key"
 

@@ -18,6 +18,7 @@ from app.llm import (
 )
 from app.schemas import BugfixRequest
 from benchmarks.swe_bench.models import SingleCaseConfig, WorkerResult
+from benchmarks.swe_bench.validation import ValidationResult, validate_swe_patch
 
 
 _REPO_PATTERN = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
@@ -50,6 +51,7 @@ def load_instance(
 def prepare_workspace(
     instance: dict[str, str],
     workspace: Path,
+    git_cache: Path | None = None,
     run_command: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
 ) -> Path:
     repo = instance["repo"]
@@ -59,13 +61,16 @@ def prepare_workspace(
         shutil.rmtree(workspace)
     workspace.parent.mkdir(parents=True, exist_ok=True)
 
-    clone_command = [
-        "git",
-        "clone",
-        "--filter=blob:none",
-        f"https://github.com/{repo}.git",
-        str(workspace),
-    ]
+    if git_cache is None:
+        clone_command = [
+            "git", "clone", "--filter=blob:none",
+            f"https://github.com/{repo}.git", str(workspace),
+        ]
+    else:
+        clone_command = [
+            "git", "clone", "--shared", "--no-checkout",
+            str(git_cache), str(workspace),
+        ]
     run_command(
         clone_command,
         check=True,
@@ -73,6 +78,15 @@ def prepare_workspace(
         text=True,
         timeout=300,
     )
+    if git_cache is not None:
+        run_command(
+            ["git", "remote", "set-url", "origin", f"https://github.com/{repo}.git"],
+            cwd=workspace,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
     run_command(
         ["git", "checkout", "--detach", instance["base_commit"]],
         cwd=workspace,
@@ -82,6 +96,46 @@ def prepare_workspace(
         timeout=300,
     )
     return workspace
+
+
+def ensure_git_cache(
+    instance: dict[str, str],
+    cache: Path,
+    seed_workspace: Path,
+    run_command: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
+    path_exists: Callable[[Path], bool] = Path.exists,
+) -> Path:
+    repo = instance["repo"]
+    if not _REPO_PATTERN.fullmatch(repo):
+        raise ValueError(f"Invalid SWE-bench repository name: {repo}")
+    remote = f"https://github.com/{repo}.git"
+    if not path_exists(cache):
+        cache.parent.mkdir(parents=True, exist_ok=True)
+        if path_exists(seed_workspace):
+            clone_command = ["git", "clone", "--bare", str(seed_workspace), str(cache)]
+        else:
+            clone_command = ["git", "clone", "--bare", "--filter=blob:none", remote, str(cache)]
+        run_command(
+            clone_command, check=True, capture_output=True, text=True, timeout=300,
+        )
+        run_command(
+            ["git", "-C", str(cache), "remote", "set-url", "origin", remote],
+            check=True, capture_output=True, text=True, timeout=60,
+        )
+
+    commit_check = run_command(
+        ["git", "-C", str(cache), "cat-file", "-e", f"{instance['base_commit']}^{{commit}}"],
+        capture_output=True, text=True, timeout=60, check=False,
+    )
+    if commit_check.returncode != 0:
+        run_command(
+            [
+                "git", "-C", str(cache), "fetch", "--filter=blob:none",
+                "origin", instance["base_commit"],
+            ],
+            check=True, capture_output=True, text=True, timeout=300,
+        )
+    return cache
 
 
 def collect_patch(
@@ -109,12 +163,15 @@ def run_patchharness(
     retry_delays: tuple[float, ...] = (5, 10, 20),
     sleeper: Callable[[float], None] = time.sleep,
     event_sink: Callable[[dict[str, Any]], None] | None = None,
+    patch_validator: Callable[[Path, SingleCaseConfig], ValidationResult] | None = None,
 ) -> WorkerResult:
     start = time.perf_counter()
     response_data: dict[str, Any] | None = None
     failure_category = ""
     error_summary = ""
     patch_text = ""
+    validation: ValidationResult | None = None
+    repair_attempts = 0
 
     inner = client_factory(config.provider)
     budgeted = BudgetedLLMClient(
@@ -135,8 +192,7 @@ def run_patchharness(
 
     try:
         workflow = workflow_builder(retrying)
-        response = workflow.run(
-            BugfixRequest(
+        request = BugfixRequest(
                 task_description=instance["problem_statement"],
                 workspace_path=str(workspace),
                 mode="fix",
@@ -145,8 +201,50 @@ def run_patchharness(
                 enable_llm=True,
                 use_langgraph=False,
             )
-        )
+        response = workflow.run(request)
         response_data = response.to_dict()
+        patch_text = patch_collector(workspace)
+        if config.smoke_test_command or patch_validator is not None:
+            validator = patch_validator or _validate_configured_patch
+            validation = validator(workspace, config)
+            response_data["swe_validation"] = validation.to_dict()
+            repairable_validation_stages = {"static", "docker_smoke"}
+            if (
+                not validation.ok
+                and validation.stage in repairable_validation_stages
+                and config.max_repair_attempts
+            ):
+                repair_request = BugfixRequest(
+                    task_description=(
+                        instance["problem_statement"]
+                        + "\n\nThe first patch failed local validation. Repair the existing patch once. "
+                        + f"Validation stage: {validation.stage}. Error: {validation.error}. "
+                        + f"stderr: {validation.stderr[-1000:]}"
+                    ),
+                    workspace_path=str(workspace),
+                    mode="fix",
+                    allow_edit=True,
+                    run_tests=False,
+                    enable_llm=True,
+                    use_langgraph=False,
+                )
+                response = workflow.run(repair_request)
+                response_data = response.to_dict()
+                patch_text = patch_collector(workspace)
+                validation = validator(workspace, config)
+                response_data["swe_validation"] = validation.to_dict()
+                response_data["swe_repair_attempts"] = 1
+                repair_attempts = 1
+                if not validation.ok:
+                    failure_category = (
+                        "patch_validation_failed"
+                        if validation.stage in repairable_validation_stages
+                        else "validation_infrastructure_error"
+                    )
+                    error_summary = validation.error
+            elif not validation.ok:
+                failure_category = "validation_infrastructure_error"
+                error_summary = validation.error
     except LLMCallBudgetExceeded as exc:
         failure_category = "call_budget_exceeded"
         error_summary = str(exc)
@@ -163,7 +261,8 @@ def run_patchharness(
         error_summary = str(exc)
 
     try:
-        patch_text = patch_collector(workspace)
+        if not patch_text:
+            patch_text = patch_collector(workspace)
     except Exception as exc:
         if not failure_category:
             failure_category = "repository_setup_error"
@@ -203,6 +302,10 @@ def run_patchharness(
         root_cause_status=str(root_cause.get("status", "")),
         root_cause_evidence_count=int(root_cause.get("evidence_count", 0)),
         root_cause_stop_reason=str(root_cause.get("stop_reason", "")),
+        validation_stage=validation.stage if validation else "",
+        validation_ok=validation.ok if validation else None,
+        validation_error=validation.error if validation else "",
+        repair_attempts=repair_attempts,
     )
 
 
@@ -212,6 +315,17 @@ def _build_workflow(llm_client: Any) -> BugfixWorkflow:
         registry=defaults.registry,
         planner=defaults.planner,
         llm_client=llm_client,
+    )
+
+
+def _validate_configured_patch(workspace: Path, config: SingleCaseConfig) -> ValidationResult:
+    return validate_swe_patch(
+        workspace,
+        config.instance_id,
+        config.smoke_test_command,
+        config.smoke_test_timeout_seconds,
+        dataset_name=config.dataset_name,
+        split=config.split,
     )
 
 

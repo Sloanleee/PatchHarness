@@ -6,7 +6,7 @@ tools:
   - git_diff
   - search_skill
   - download_skill
-max_iterations: 2
+max_iterations: 6
 temperature: 0.0
 output_schema:
   type: summary_report

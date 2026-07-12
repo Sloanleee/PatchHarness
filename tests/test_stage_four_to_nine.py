@@ -58,7 +58,7 @@ class StageFourToNineTests(unittest.TestCase):
             workspace = Path(tmp)
             (workspace / "src.py").write_text("class Target:\n    pass\n", encoding="utf-8")
             llm = MockLLMClient(
-                [LLMAction("keep investigating", "grep_search", {"query": "class Target"}) for _ in range(6)]
+                [LLMAction("keep investigating", "grep_search", {"query": "class Target"}) for _ in range(18)]
             )
             workflow = BugfixWorkflow.from_default_configs()
             workflow.llm_client = llm
@@ -79,7 +79,7 @@ class StageFourToNineTests(unittest.TestCase):
             (workspace / "docs").mkdir()
             (workspace / "docs" / "guide.py").write_text("class Target:\n", encoding="utf-8")
             llm = MockLLMClient(
-                [LLMAction("keep investigating", "grep_search", {"query": "class Target"}) for _ in range(6)]
+                [LLMAction("keep investigating", "grep_search", {"query": "class Target"}) for _ in range(18)]
             )
             workflow = BugfixWorkflow.from_default_configs()
             workflow.llm_client = llm
@@ -100,7 +100,7 @@ class StageFourToNineTests(unittest.TestCase):
             class RecordingLLM(MockLLMClient):
                 def __init__(self):
                     super().__init__([
-                        *[LLMAction("investigate", "grep_search", {"query": "value = 1"}) for _ in range(6)],
+                        *[LLMAction("investigate", "grep_search", {"query": "value = 1"}) for _ in range(18)],
                         LLMAction("patch", "edit_file", {"path": "target.py", "old": "value = 1", "new": "value = 2"}),
                         LLMAction("done", final="patched"),
                     ])
@@ -119,7 +119,7 @@ class StageFourToNineTests(unittest.TestCase):
 
             self.assertEqual(result.agent_reports[0].status, "partial")
             self.assertEqual(result.changed_files, ["target.py"])
-            patch_prompt = llm.batches[6][1]["content"]
+            patch_prompt = llm.batches[18][1]["content"]
             self.assertIn("candidate_locations", patch_prompt)
             self.assertNotIn("SECRET_FULL_CONTENT", patch_prompt)
 
@@ -135,7 +135,7 @@ class StageFourToNineTests(unittest.TestCase):
                 def __init__(self):
                     self.outcomes = deque([
                         LLMAction("read source", "read_file", {"path": "target.py"}),
-                        *[LLMAction("investigate", "grep_search", {"query": "value = 1"}) for _ in range(5)],
+                        *[LLMAction("investigate", "grep_search", {"query": "value = 1"}) for _ in range(17)],
                         TimeoutError("compression timeout one"),
                         TimeoutError("compression timeout two"),
                         LLMAction("patch", "edit_file", {"path": "target.py", "old": "value = 1", "new": "value = 2"}),

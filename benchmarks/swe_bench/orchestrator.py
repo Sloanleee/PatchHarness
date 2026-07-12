@@ -207,6 +207,9 @@ def run_single(
         "timeout_seconds": config.timeout_seconds,
         "rpm_limit": config.rpm_limit,
         "tpm_limit": config.tpm_limit,
+        "smoke_test_command": list(config.smoke_test_command),
+        "smoke_test_timeout_seconds": config.smoke_test_timeout_seconds,
+        "max_repair_attempts": config.max_repair_attempts,
     })
 
     metrics: dict[str, Any] = {
@@ -236,6 +239,10 @@ def run_single(
         "root_cause_status": "",
         "root_cause_evidence_count": 0,
         "root_cause_stop_reason": "",
+        "validation_stage": "",
+        "validation_ok": None,
+        "validation_error": "",
+        "repair_attempts": 0,
         "elapsed_seconds": 0.0,
         "patch_generated": False,
         "failed_stage": "",
@@ -323,6 +330,10 @@ def run_single(
             "root_cause_status": worker.root_cause_status,
             "root_cause_evidence_count": worker.root_cause_evidence_count,
             "root_cause_stop_reason": worker.root_cause_stop_reason,
+            "validation_stage": worker.validation_stage,
+            "validation_ok": worker.validation_ok,
+            "validation_error": _redact(worker.validation_error),
+            "repair_attempts": worker.repair_attempts,
         }
     )
     patch_path = model_dir / "model.patch"
@@ -350,6 +361,10 @@ def run_single(
         _fail(metrics, "model_evaluated", "harness_error", exc)
         _write_evidence(run_dir, metrics)
         return run_dir
+
+    if metrics["model_resolved"]:
+        metrics["failure_category"] = ""
+        metrics["error_summary"] = ""
 
     metrics["stage"] = "completed"
     _write_evidence(run_dir, metrics)
@@ -499,6 +514,10 @@ def _write_evidence(run_dir: Path, metrics: dict[str, Any]) -> None:
             f"- Root cause status: `{metrics['root_cause_status']}`",
             f"- Root cause evidence count: `{metrics['root_cause_evidence_count']}`",
             f"- Root cause stop reason: `{metrics['root_cause_stop_reason']}`",
+            f"- Local validation stage: `{metrics['validation_stage']}`",
+            f"- Local validation passed: `{metrics['validation_ok']}`",
+            f"- Local validation error: `{metrics['validation_error']}`",
+            f"- Patch repair attempts: `{metrics['repair_attempts']}`",
             f"- Patch generated: `{metrics['patch_generated']}`",
             f"- Failure category: `{metrics['failure_category']}`",
             f"- Error: `{metrics['error_summary']}`",

@@ -4,9 +4,16 @@
   "instance_id": "sympy__sympy-20590",
   "selection_reason": "Official SWE-bench quickstart instance with a small Python patch and a documented gold validation command.",
   "provider": "ark",
-  "max_calls": 12,
-  "max_tokens": 200000,
+  "max_calls": 100,
+  "max_tokens": 1000000,
   "timeout_seconds": 1800,
-  "rpm_limit": 500,
-  "tpm_limit": 1000000
+  "rpm_limit": 3000,
+  "tpm_limit": 3000000,
+  "smoke_test_command": [
+    "python",
+    "-c",
+    "from sympy import Basic; value = Basic(); assert not hasattr(value, '__dict__')"
+  ],
+  "smoke_test_timeout_seconds": 300,
+  "max_repair_attempts": 1
 }

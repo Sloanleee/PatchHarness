@@ -7,7 +7,7 @@ tools:
   - git_diff
   - search_skill
   - download_skill
-max_iterations: 3
+max_iterations: 9
 temperature: 0.0
 output_schema:
   type: test_verify_report

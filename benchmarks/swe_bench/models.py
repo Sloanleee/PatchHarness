@@ -18,6 +18,9 @@ class SingleCaseConfig:
     timeout_seconds: int
     rpm_limit: int = 500
     tpm_limit: int = 1_000_000
+    smoke_test_command: tuple[str, ...] = ()
+    smoke_test_timeout_seconds: int = 300
+    max_repair_attempts: int = 1
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "SingleCaseConfig":
@@ -48,6 +51,9 @@ class SingleCaseConfig:
             timeout_seconds=int(data["timeout_seconds"]),
             rpm_limit=int(data.get("rpm_limit", 500)),
             tpm_limit=int(data.get("tpm_limit", 1_000_000)),
+            smoke_test_command=tuple(str(item) for item in data.get("smoke_test_command", ())),
+            smoke_test_timeout_seconds=int(data.get("smoke_test_timeout_seconds", 300)),
+            max_repair_attempts=int(data.get("max_repair_attempts", 1)),
         )
         if not config.instance_id:
             raise ValueError("instance_id must not be empty")
@@ -59,8 +65,13 @@ class SingleCaseConfig:
             config.timeout_seconds,
             config.rpm_limit,
             config.tpm_limit,
+            config.smoke_test_timeout_seconds,
         ) <= 0:
             raise ValueError("budgets and timeout must be positive")
+        if config.max_repair_attempts not in (0, 1):
+            raise ValueError("max_repair_attempts must be 0 or 1")
+        if any(not part for part in config.smoke_test_command):
+            raise ValueError("smoke_test_command entries must not be empty")
         return config
 
 
@@ -86,6 +97,10 @@ class WorkerResult:
     root_cause_status: str = ""
     root_cause_evidence_count: int = 0
     root_cause_stop_reason: str = ""
+    validation_stage: str = ""
+    validation_ok: bool | None = None
+    validation_error: str = ""
+    repair_attempts: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -120,6 +135,10 @@ class WorkerResult:
             root_cause_status=str(data.get("root_cause_status", "")),
             root_cause_evidence_count=int(data.get("root_cause_evidence_count", 0)),
             root_cause_stop_reason=str(data.get("root_cause_stop_reason", "")),
+            validation_stage=str(data.get("validation_stage", "")),
+            validation_ok=data.get("validation_ok"),
+            validation_error=str(data.get("validation_error", "")),
+            repair_attempts=int(data.get("repair_attempts", 0)),
         )
 
 

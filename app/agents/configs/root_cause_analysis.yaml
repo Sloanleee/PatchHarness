@@ -9,7 +9,7 @@ tools:
   - git_diff
   - search_skill
   - download_skill
-max_iterations: 6
+max_iterations: 18
 temperature: 0.1
 output_schema:
   type: root_cause_analysis_report
