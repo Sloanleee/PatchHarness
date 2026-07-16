@@ -220,7 +220,7 @@ def run_single(
         "gold_resolved": None,
         "gold_reused": False,
         "gold_source_run_id": None,
-        "swebench_version": importlib.metadata.version("swebench"),
+        "swebench_version": _installed_package_version("swebench"),
         "model_resolved": None,
         "llm_calls": 0,
         "prompt_tokens": 0,
@@ -379,6 +379,13 @@ def _run_probe(run_command: Callable[..., Any], command: list[str]):
         timeout=30,
         check=False,
     )
+
+
+def _installed_package_version(name: str) -> str | None:
+    try:
+        return importlib.metadata.version(name)
+    except importlib.metadata.PackageNotFoundError:
+        return None
 
 
 def validate_reusable_gold(

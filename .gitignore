@@ -16,5 +16,6 @@ results/langgraph_vs_sequential/runs
 results/production_demo/runs/
 results/swe_bench_single/runs/
 results/swe_bench_single/cache/
+logs/build_images/
 docs/
 requirements-optional.txt

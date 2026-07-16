@@ -1,4 +1,5 @@
 import json
+import importlib.metadata
 import subprocess
 import tempfile
 import unittest
@@ -71,6 +72,23 @@ class SweBenchPreflightTests(unittest.TestCase):
 
 
 class SweBenchOrchestratorTests(unittest.TestCase):
+    def test_missing_swebench_metadata_is_recorded_as_null(self):
+        with tempfile.TemporaryDirectory() as tmp, patch(
+            "benchmarks.swe_bench.orchestrator.importlib.metadata.version",
+            side_effect=importlib.metadata.PackageNotFoundError("swebench"),
+        ):
+            root = Path(tmp)
+            run_dir = run_single(
+                self._config(root),
+                root / "results",
+                "run_without_swebench_metadata",
+                preflight_fn=lambda project_root: {"interpreter": "venv/bin/python"},
+                harness_runner=lambda *args: False,
+            )
+            metrics = json.loads((run_dir / "metrics.json").read_text(encoding="utf-8"))
+
+        self.assertIsNone(metrics["swebench_version"])
+
     def _config(self, root):
         path = root / "case.json"
         path.write_text(json.dumps(CASE), encoding="utf-8")
